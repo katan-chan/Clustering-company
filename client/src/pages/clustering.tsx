@@ -1,43 +1,50 @@
 import { useEffect } from "react";
-import { useClusteringStore } from "@/lib/clustering-store";
+import { useClusteringStore } from "../lib/clustering-store";
 import FileUploadZone from "@/components/file-upload-zone";
 import ClusteringForm from "@/components/clustering-form";
 import ScatterPlot from "@/components/scatter-plot";
-import ResultsPanel from "@/components/results-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { CheckCircle, AlertCircle, Loader2, TestTube } from "lucide-react";
+import { Link } from "wouter";
 
 export default function ClusteringPage() {
   const {
     embeddingsFile,
     infoFile,
-    processing,
+    isRunning,
     progress,
     error,
     results,
-    validationStatus,
     runClustering,
     clearError,
   } = useClusteringStore();
 
-  const canRunClustering = !processing;
+  const canRunClustering = !isRunning;
 
   useEffect(() => {
     document.title = "Enterprise Clustering Analytics Platform";
   }, []);
 
   return (
-    <div className="h-screen flex overflow-hidden bg-background">
+    <div className="h-screen flex flex-col lg:flex-row overflow-hidden bg-background">
       {/* Left Sidebar - Control Panel */}
-      <div className="w-80 min-w-[280px] max-w-[400px] lg:w-80 xl:w-96 bg-card border-r border-border flex flex-col">
+      <div className="w-full lg:w-80 lg:min-w-[280px] lg:max-w-[400px] xl:w-96 bg-card border-r border-border flex flex-col lg:h-screen">
         {/* Header */}
         <div className="p-6 border-b border-border">
-          <h1 className="text-xl font-semibold text-foreground mb-2">
-            Clustering Control Panel
-          </h1>
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-xl font-semibold text-foreground">
+              Clustering Control Panel
+            </h1>
+            <Link href="/mock-test">
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <TestTube className="h-4 w-4" />
+                Mock Test
+              </Button>
+            </Link>
+          </div>
           <p className="text-sm text-muted-foreground">
             Upload data files and configure clustering parameters
           </p>
@@ -45,50 +52,6 @@ export default function ClusteringPage() {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* File Upload Section */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium text-foreground mb-4">Data Files (Tùy chọn)</h3>
-            
-            <FileUploadZone
-              type="embeddings"
-              title="Embeddings File"
-              description="CSV or TXT format"
-              icon="cloud-upload"
-              data-testid="upload-embeddings"
-            />
-            
-            <FileUploadZone
-              type="info"
-              title="Info File"
-              description="CSV or TXT format"
-              icon="database"
-              data-testid="upload-info"
-            />
-
-            {/* Validation Status */}
-            {validationStatus && (
-              <Card className={`p-3 ${validationStatus.valid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex items-center">
-                  {validationStatus.valid ? (
-                    <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-red-500 mr-2" />
-                  )}
-                  <span className={`text-sm ${validationStatus.valid ? 'text-green-800' : 'text-red-800'}`}>
-                    {validationStatus.message}
-                  </span>
-                </div>
-                {validationStatus.valid && validationStatus.details && (
-                  <div className="mt-2 text-xs text-green-700 space-y-1">
-                    {validationStatus.details.map((detail, index) => (
-                      <div key={index}>• {detail}</div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            )}
-          </div>
-
           <Separator />
 
           {/* Clustering Parameters */}
@@ -96,15 +59,18 @@ export default function ClusteringPage() {
 
           <Separator />
 
+
+
+
           {/* Run Clustering */}
           <div className="space-y-4">
             <Button
-              onClick={runClustering}
+              onClick={() => runClustering()}
               disabled={!canRunClustering}
               className="w-full bg-accent hover:bg-accent/90 text-white font-medium py-3"
               data-testid="button-run-clustering"
             >
-              {processing ? (
+              {isRunning ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Processing...
@@ -115,7 +81,7 @@ export default function ClusteringPage() {
             </Button>
 
             {/* Progress Indicator */}
-            {processing && (
+            {isRunning && (
               <Card className="p-3 bg-blue-50 border-blue-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-blue-800">Processing...</span>
@@ -181,30 +147,31 @@ export default function ClusteringPage() {
 
       {/* Main Content - Visualization */}
       <div className="flex-1 flex flex-col">
-        {/* Top Toolbar */}
-        <div className="bg-card border-b border-border px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <h2 className="text-lg font-semibold text-foreground">
-                PCA 2D Clustering Visualization
-              </h2>
-              {results && (
-                <div className="bg-muted px-3 py-1 rounded-full text-sm text-muted-foreground" data-testid="data-points-count">
-                  {results.dataPoints?.length || 0} data points
-                </div>
-              )}
+        {/* Chart Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Top Toolbar */}
+          <div className="bg-card border-b border-border px-4 lg:px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <h2 className="text-lg font-semibold text-foreground">
+                  Cluster Visualization
+                </h2>
+                {results && (
+                  <div className="bg-muted px-3 py-1 rounded-full text-sm text-muted-foreground" data-testid="data-points-count">
+                    {results.dataPoints?.length || 0} data points
+                  </div>
+                )}
+              </div>
             </div>
+          </div>
+
+          {/* Chart */}
+          <div className="flex-1 p-4 lg:p-6">
+            <ScatterPlot />
           </div>
         </div>
 
-        {/* Chart Area */}
-        <div className="flex-1 p-6">
-          <ScatterPlot />
-        </div>
       </div>
-
-      {/* Right Panel - Results */}
-      <ResultsPanel />
 
       {/* Error Notification */}
       {error && (

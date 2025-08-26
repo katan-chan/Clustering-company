@@ -21,11 +21,13 @@ export const fileMetadataSchema = z.object({
 
 // Clustering parameters
 export const clusteringParamsSchema = z.object({
-  lambda: z.number().min(0.01).max(10),
+  lambda: z.number().min(0).max(100),
   k: z.union([
     z.number().int().min(2).max(20),
     z.array(z.number().int().min(2).max(20))
   ]),
+  pca_dim: z.number().int().min(2).max(512).default(128),
+  level_value: z.string().min(1),
 });
 
 // API configuration
@@ -44,13 +46,18 @@ export const dataPointSchema = z.object({
     y: z.number(),
   }).optional(),
   cluster: z.number().optional(),
+  size: z.number().optional(),
 });
 
 export const clusterResultSchema = z.object({
   dataset_id: z.string(),
+  mode: z.string().optional(),
+  level: z.number().optional(),
+  level_value: z.string().optional(),
   lambda: z.number(),
   k_candidates: z.array(z.number()),
   best_k: z.number(),
+  n_samples: z.number().optional(),
   metrics_csv: z.string(),
   metric_plots: z.object({
     calinski_harabasz: z.string().optional(),
@@ -58,6 +65,10 @@ export const clusterResultSchema = z.object({
     silhouette: z.string().optional(),
   }).optional(),
   labels_csv: z.string(),
+  labels: z.array(z.number()).optional(),
+  scatter_plot_b64: z.string().optional(),
+  embedding: z.array(z.array(z.number())).optional(),
+  size: z.array(z.number()).optional(),
   projection_plots: z.object({
     pca: z.string().optional(),
     tsne: z.string().optional(),

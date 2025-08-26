@@ -1,9 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import { useClusteringStore } from "@/lib/clustering-store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CloudUpload, Database, FileText, AlertCircle, CheckCircle } from "lucide-react";
+import { CloudUpload, Database, FileText, CheckCircle } from "lucide-react";
 
 interface FileUploadZoneProps {
   type: "embeddings" | "info";
@@ -14,9 +14,15 @@ interface FileUploadZoneProps {
 }
 
 export default function FileUploadZone({ type, title, description, icon, "data-testid": testId }: FileUploadZoneProps) {
+  // Don't render anything for embeddings type
+  if (type === "embeddings") {
+    return null;
+  }
+
   const { embeddingsFile, infoFile, uploadFile, fileMetadata } = useClusteringStore();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
-  const currentFile = type === "embeddings" ? embeddingsFile : infoFile;
+  const currentFile = infoFile;
   const currentMetadata = currentFile ? fileMetadata[currentFile.name] : null;
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -56,7 +62,6 @@ export default function FileUploadZone({ type, title, description, icon, "data-t
         <p className="text-sm font-medium text-foreground mb-1">{title}</p>
         <p className="text-xs text-muted-foreground mb-1">{description}</p>
         <p className="text-xs text-orange-600 mb-3">Tùy chọn - có thể bỏ trống</p>
-        
         {currentFile ? (
           <div className="space-y-2">
             <div className="flex items-center justify-center space-x-2">

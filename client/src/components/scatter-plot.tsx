@@ -7,7 +7,7 @@ import { Move, ZoomIn, Lasso, Maximize, ExternalLink } from "lucide-react";
 import Plotly from "plotly.js-dist";
 
 export default function ScatterPlot() {
-  const { results, processing, selectedProjectionType } = useClusteringStore();
+  const { results, isRunning, selectedProjectionType } = useClusteringStore();
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotReady, setPlotReady] = useState(false);
   const [selectedClusters, setSelectedClusters] = useState<number[]>([]);
@@ -60,10 +60,29 @@ export default function ScatterPlot() {
   );
 
   useEffect(() => {
-    if (!plotRef.current || !results?.dataPoints) return;
+    if (!plotRef.current) return;
 
-    const dataPoints = results.dataPoints;
-    const clusters = Array.from(new Set(dataPoints.map(d => d.cluster).filter(Boolean))).sort();
+    // Generate mock data for visualization
+    const mockData = Array.from({ length: 50 }, (_, i) => ({
+      id: `mock-${i}`,
+      info: {},
+      embedding: [Math.random() * 100, Math.random() * 100],
+      pca: {
+        x: (Math.random() - 0.5) * 20,
+        y: (Math.random() - 0.5) * 20
+      },
+      cluster: Math.floor(Math.random() * 4)
+    }));
+
+    const dataPoints = results?.dataPoints || mockData;
+    
+    console.log("🔍 Debug visualization data:");
+    console.log("📊 Total dataPoints:", dataPoints.length);
+    console.log("📋 DataPoints sample:", dataPoints.slice(0, 3));
+    console.log("🏷️ All cluster values:", dataPoints.map(d => d.cluster));
+    
+    const clusters = Array.from(new Set(dataPoints.map(d => d.cluster).filter(c => c !== null && c !== undefined))).sort();
+    console.log("🎯 Unique clusters found:", clusters);
     
     // Color palette for clusters
     const colors = [
@@ -76,6 +95,9 @@ export default function ScatterPlot() {
       const clusterPoints = dataPoints.filter(d => d.cluster === clusterId);
       const showCluster = selectedClusters.length === 0 || selectedClusters.includes(clusterId!);
       
+      console.log(`🎨 Cluster ${clusterId}: ${clusterPoints.length} points`);
+      console.log(`📍 Points for cluster ${clusterId}:`, clusterPoints.map(p => `(${p.pca?.x}, ${p.pca?.y})`));
+      
       return {
         x: clusterPoints.map(d => d.pca?.x || 0),
         y: clusterPoints.map(d => d.pca?.y || 0),
@@ -84,7 +106,7 @@ export default function ScatterPlot() {
         name: `Cluster ${clusterId} (${clusterPoints.length})`,
         marker: {
           color: colors[index % colors.length],
-          size: 6,
+          size: clusterPoints.map(d => (d.size || 0) * 10 + 5), // Dynamic size based on backend data + offset
           opacity: showCluster ? 0.7 : 0.1,
         },
         text: clusterPoints.map(d => 
@@ -101,22 +123,38 @@ export default function ScatterPlot() {
         font: { size: 16 }
       },
       xaxis: {
-        title: 'PCA Component 1 (34.2% variance)',
+        title: {
+          text: 'PCA Component 1 (34.2% variance explained)',
+          font: { size: 14, color: '#374151' }
+        },
         showgrid: true,
         gridcolor: 'rgba(0,0,0,0.1)',
         showticklabels: true,
         tickformat: '.2f',
+        tickfont: { size: 12, color: '#6B7280' },
         zeroline: true,
-        zerolinecolor: 'rgba(0,0,0,0.2)',
+        zerolinecolor: 'rgba(0,0,0,0.3)',
+        zerolinewidth: 1,
+        showline: true,
+        linecolor: 'rgba(0,0,0,0.2)',
+        mirror: true,
       },
       yaxis: {
-        title: 'PCA Component 2 (22.8% variance)',
+        title: {
+          text: 'PCA Component 2 (22.8% variance explained)',
+          font: { size: 14, color: '#374151' }
+        },
         showgrid: true,
         gridcolor: 'rgba(0,0,0,0.1)',
         showticklabels: true,
         tickformat: '.2f',
+        tickfont: { size: 12, color: '#6B7280' },
         zeroline: true,
-        zerolinecolor: 'rgba(0,0,0,0.2)',
+        zerolinecolor: 'rgba(0,0,0,0.3)',
+        zerolinewidth: 1,
+        showline: true,
+        linecolor: 'rgba(0,0,0,0.2)',
+        mirror: true,
       },
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',
@@ -190,7 +228,7 @@ export default function ScatterPlot() {
 
   // Render scatter plot view
   const renderScatterPlot = () => {
-    if (processing) {
+    if (isRunning) {
       return (
         <div className="flex-1 flex items-center justify-center bg-card">
           <div className="text-center">
@@ -212,13 +250,12 @@ export default function ScatterPlot() {
         </div>
       );
     }
-
     return (
       <div className="flex-1 flex flex-col bg-card">
         {/* Toolbar */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">PCA Scatter Plot</h2>
+            <h2 className="text-lg font-semibold text-foreground">Cluster Visualization</h2>
             
             <div className="flex items-center gap-2">
               {/* Cluster Filter */}
@@ -237,7 +274,7 @@ export default function ScatterPlot() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Clusters</SelectItem>
-                  {Array.from(new Set(results.dataPoints.map(d => d.cluster).filter(Boolean))).sort().map(cluster => (
+                  {Array.from(new Set(results.dataPoints.map(d => d.cluster).filter(c => c !== null && c !== undefined))).sort().map(cluster => (
                     <SelectItem key={cluster} value={cluster!.toString()}>
                       Cluster {cluster}
                     </SelectItem>

@@ -1,4 +1,4 @@
-import { ApiConfig, ClusterResult } from "@shared/schema";
+import { ApiConfig, ClusterResult, ClusteringParams } from "@shared/schema";
 
 interface ClusteringRequest {
   lambda: number;
@@ -20,7 +20,6 @@ class ClusteringApi {
         headers: {
           'Accept': 'application/json',
           'ngrok-skip-browser-warning': 'true',
-          ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
         },
         signal: controller.signal,
       });
@@ -84,7 +83,6 @@ class ClusteringApi {
         method: 'POST',
         headers: {
           'ngrok-skip-browser-warning': 'true',
-          ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
         },
         body: formData,
         signal: controller.signal,
@@ -121,51 +119,60 @@ class ClusteringApi {
     }
   }
 
-  async runClustering(request: ClusteringRequest, config: ApiConfig): Promise<ClusterResult> {
+  async runClustering(config: ApiConfig, params: ClusteringParams, infoFileBase64?: string): Promise<ClusterResult> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
     try {
+      const requestBody = {
+        pca_dim: params.pca_dim,
+        lambda: params.lambda,
+        k: params.k,
+        level_value: params.level_value,
+        ...(infoFileBase64 && { info_quy_mo_b64: infoFileBase64 })
+      };
+
+      console.log("🔍 Info file check:");
+      console.log("📄 infoFileBase64 provided:", !!infoFileBase64);
+      console.log("📊 info_quy_mo_b64 in payload:", 'info_quy_mo_b64' in requestBody);
+      if (infoFileBase64) {
+        console.log("📏 Base64 length:", infoFileBase64.length);
+        console.log("🔤 Base64 preview:", infoFileBase64.substring(0, 100) + "...");
+      }
+
+      // Log the JSON payload being sent to API
+      console.log("🚀 API Request Payload:");
+      console.log("📋 JSON being sent to /cluster/run:");
+      console.log(JSON.stringify(requestBody, null, 2));
+      console.log("🌐 Endpoint:", `${config.endpoint}/cluster/run`);
+
       const response = await fetch(`${config.endpoint}/cluster/run`, {
         method: 'POST',
+        mode: 'cors',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'ngrok-skip-browser-warning': 'true',
-          ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
+      console.log("📡 API Response Status:", response.status);
+      console.log("📡 API Response Headers:", Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
-        let errorMessage = `API Error ${response.status}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          errorMessage += `: ${response.statusText}`;
-        }
-        
-        // Provide specific error messages for common status codes
-        switch (response.status) {
-          case 400:
-            throw new Error(`Dữ liệu không hợp lệ: ${errorMessage}`);
-          case 401:
-            throw new Error(`Không có quyền truy cập. Kiểm tra API key.`);
-          case 404:
-            throw new Error(`Endpoint không tồn tại: ${config.endpoint}/cluster/run`);
-          case 500:
-            throw new Error(`Lỗi server: ${errorMessage}`);
-          case 503:
-            throw new Error(`Dịch vụ tạm thời không khả dụng. Thử lại sau.`);
-          default:
-            throw new Error(errorMessage);
-        }
+        const errorText = await response.text();
+        console.error("❌ API Error Response:", errorText);
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
 
-      return await response.json();
+      const result = await response.json();
+      console.log("✅ API Response Data:");
+      console.log("📊 Full Backend Response:");
+      console.log(JSON.stringify(result, null, 2));
+
+      return result;
     } catch (error) {
       clearTimeout(timeoutId);
       
@@ -189,7 +196,6 @@ class ClusteringApi {
         method: 'GET',
         headers: {
           'ngrok-skip-browser-warning': 'true',
-          ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
         },
       });
 
@@ -220,7 +226,6 @@ class ClusteringApi {
           method: 'GET',
           headers: {
             'ngrok-skip-browser-warning': 'true',
-            ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
           },
         });
 
@@ -253,7 +258,6 @@ class ClusteringApi {
           method: 'GET',
           headers: {
             'ngrok-skip-browser-warning': 'true',
-            ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
           },
         });
 
@@ -277,9 +281,7 @@ class ClusteringApi {
 
   async downloadFile(filePath: string, config: ApiConfig): Promise<Blob> {
     const response = await fetch(filePath, {
-      headers: {
-        ...(config.apiKey && { 'Authorization': `Bearer ${config.apiKey}` }),
-      },
+      headers: {},
     });
 
     if (!response.ok) {

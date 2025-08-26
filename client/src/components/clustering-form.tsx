@@ -1,49 +1,86 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useClusteringStore } from "@/lib/clustering-store";
-import { clusteringParamsSchema, apiConfigSchema } from "@shared/schema";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Eye, EyeOff, Wifi, WifiOff } from "lucide-react";
-import { useState } from "react";
+import { clusteringParamsSchema, apiConfigSchema } from "../../../shared/schema";
 import { z } from "zod";
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { useToast } from "@/hooks/use-toast";
+import { Wifi, WifiOff } from "lucide-react";
+import IndustrySelector from "@/components/industry-selector";
+import { Checkbox } from "@/components/ui/checkbox";
 
-const formSchema = z.object({
+const parametersSchema = z.object({
   lambda: clusteringParamsSchema.shape.lambda,
   k: z.number().int().min(2).max(20),
+  pca_dim: clusteringParamsSchema.shape.pca_dim,
+  level_value: clusteringParamsSchema.shape.level_value,
+});
+
+const apiSchema = z.object({
   endpoint: apiConfigSchema.shape.endpoint,
-  apiKey: apiConfigSchema.shape.apiKey,
 });
 
 export default function ClusteringForm() {
-  const { parameters, apiConfig, updateParameters, updateApiConfig } = useClusteringStore();
-  const [showApiKey, setShowApiKey] = useState(false);
+  const { parameters, apiConfig, updateParameters, updateApiConfig, infoFile: storeInfoFile } = useClusteringStore();
+  const { toast } = useToast();
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("disconnected");
+  const [infoFile, setInfoFile] = useState<File | null>(null);
+  const [showOnlyAvailable, setShowOnlyAvailable] = useState(false);
+  const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const parametersForm = useForm<z.infer<typeof parametersSchema>>({
+    resolver: zodResolver(parametersSchema),
     defaultValues: {
       lambda: parameters.lambda,
       k: Array.isArray(parameters.k) ? parameters.k[0] : parameters.k,
-      endpoint: apiConfig.endpoint,
-      apiKey: apiConfig.apiKey || "",
+      pca_dim: parameters.pca_dim,
+      level_value: parameters.level_value,
     },
   });
 
-  const onParametersSubmit = (data: { lambda: number; k: number }) => {
+  const apiForm = useForm<z.infer<typeof apiSchema>>({
+    resolver: zodResolver(apiSchema),
+    defaultValues: {
+      endpoint: apiConfig.endpoint,
+    },
+  });
+
+  const onParametersSubmit = (data: { lambda: number; k: number; pca_dim: number; level_value: string }) => {
     updateParameters({
       lambda: data.lambda,
       k: data.k,
+      pca_dim: data.pca_dim,
+      level_value: data.level_value,
+    });
+
+    // Show success notification
+    toast({
+      title: "Parameters Updated",
+      description: "Algorithm parameters have been successfully updated",
+      variant: "default",
+    });
+
+    // Log current parameter values
+    console.log("✅ Parameters updated successfully:");
+    console.log("📊 Current parameter values:");
+    console.log({
+      lambda: data.lambda,
+      k: data.k,
+      pca_dim: data.pca_dim,
+      level_value: data.level_value,
     });
   };
 
-  const onApiConfigSubmit = async (data: { endpoint: string; apiKey?: string }) => {
+  const onApiConfigSubmit = async (data: { endpoint: string }) => {
     updateApiConfig({
       endpoint: data.endpoint,
-      apiKey: data.apiKey,
     });
     
     // Real connection check using /meta endpoint
@@ -51,17 +88,108 @@ export default function ClusteringForm() {
       setConnectionStatus("checking");
       try {
         const { clusteringApi } = await import("@/lib/clustering-api");
-        await clusteringApi.getMeta({
-          endpoint: data.endpoint,
-          apiKey: data.apiKey,
-        });
+        await clusteringApi.getMeta({ endpoint: data.endpoint });
         setConnectionStatus("connected");
       } catch (error) {
+        console.error("Connection failed:", error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown connection error";
+        toast({
+          title: "Connection Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
         setConnectionStatus("disconnected");
-        console.error("Connection check failed:", error);
       }
     } else {
       setConnectionStatus("disconnected");
+    }
+  };
+
+  const parseIndustriesFromCSV = async (file: File): Promise<string[]> => {
+    try {
+      const text = await file.text();
+      const lines = text.split('\n');
+      const industries = new Set<string>();
+      
+      if (lines.length === 0) return [];
+      
+      // Parse header to find sector_unique_id column
+      const headerLine = lines[0].trim();
+      const headers = headerLine.split(',').map(col => col.trim().replace(/"/g, ''));
+      const sectorColumnIndex = headers.findIndex(header => 
+        header.toLowerCase().includes('sector_unique_id') || 
+        header.toLowerCase().includes('sector') ||
+        header.toLowerCase().includes('industry_code') ||
+        header.toLowerCase().includes('industrycode')
+      );
+      
+      console.log("📋 CSV Headers:", headers);
+      console.log("🎯 Found sector column at index:", sectorColumnIndex, headers[sectorColumnIndex]);
+      
+      // If sector_unique_id column found, use it specifically
+      if (sectorColumnIndex !== -1) {
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          const columns = line.split(',').map(col => col.trim().replace(/"/g, ''));
+          const sectorValue = columns[sectorColumnIndex];
+          
+          if (sectorValue && sectorValue !== '') {
+            industries.add(sectorValue);
+          }
+        }
+      } else {
+        // Fallback: look for industry code patterns in all columns
+        console.log("⚠️ sector_unique_id column not found, using pattern matching fallback");
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          const columns = line.split(',').map(col => col.trim().replace(/"/g, ''));
+          
+          columns.forEach(col => {
+            if (/^[A-Z]?\d{2,4}$/.test(col) || /^[A-Z]$/.test(col)) {
+              industries.add(col);
+            }
+          });
+        }
+      }
+      
+      return Array.from(industries);
+    } catch (error) {
+      console.error("❌ Failed to parse industries from CSV:", error);
+      return [];
+    }
+  };
+
+  const handleInfoFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    console.log("📁 File selected:", file?.name, file?.type, file?.size);
+    
+    if (file && (file.type === 'text/csv' || file.name.endsWith('.csv'))) {
+      setInfoFile(file);
+      
+      // Update the store with the file
+      const { setInfoFile: setStoreInfoFile } = useClusteringStore.getState();
+      setStoreInfoFile(file);
+      
+      // Parse available industries from the CSV
+      const industries = await parseIndustriesFromCSV(file);
+      setAvailableIndustries(industries);
+      
+      console.log("✅ Info file uploaded to store:", file.name);
+      console.log("📊 Found industries in CSV:", industries.length, industries.slice(0, 10));
+      
+      toast({
+        title: "File Uploaded",
+        description: `${file.name} uploaded. Found ${industries.length} industry codes.`,
+        variant: "default",
+      });
+    } else {
+      setInfoFile(null);
+      setAvailableIndustries([]);
+      console.log("❌ Invalid file type or no file selected");
     }
   };
 
@@ -71,10 +199,10 @@ export default function ClusteringForm() {
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-foreground">Algorithm Parameters</h3>
         
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onParametersSubmit)} className="space-y-4">
+        <Form {...parametersForm}>
+          <form onSubmit={parametersForm.handleSubmit(onParametersSubmit)} className="space-y-4">
             <FormField
-              control={form.control}
+              control={parametersForm.control}
               name="lambda"
               render={({ field }) => (
                 <FormItem>
@@ -82,9 +210,9 @@ export default function ClusteringForm() {
                   <FormControl>
                     <Input
                       type="number"
-                      step="0.1"
-                      min="0.01"
-                      max="10"
+                      step="any"
+                      min="0"
+                      max="100"
                       placeholder="0.5"
                       {...field}
                       onChange={(e) => field.onChange(parseFloat(e.target.value))}
@@ -100,7 +228,7 @@ export default function ClusteringForm() {
             />
 
             <FormField
-              control={form.control}
+              control={parametersForm.control}
               name="k"
               render={({ field }) => (
                 <FormItem>
@@ -135,6 +263,74 @@ export default function ClusteringForm() {
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={parametersForm.control}
+              name="pca_dim"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>PCA Dimensions</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min="2"
+                      max="512"
+                      placeholder="128"
+                      {...field}
+                      onChange={(e) => field.onChange(parseInt(e.target.value))}
+                      data-testid="input-pca-dim"
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Number of PCA dimensions (2-512)
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={parametersForm.control}
+              name="level_value"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Mã ngành</FormLabel>
+                  <FormControl>
+                    <IndustrySelector
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      placeholder="Chọn mã ngành..."
+                      data-testid="select-level-value"
+                      availableIndustries={availableIndustries}
+                      showOnlyAvailable={showOnlyAvailable}
+                      onShowOnlyAvailableChange={setShowOnlyAvailable}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Chọn mã ngành để phân tích
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="space-y-2">
+              <Label htmlFor="info-file">Info CSV File (Optional)</Label>
+              <Input
+                id="info-file"
+                type="file"
+                accept=".csv"
+                onChange={handleInfoFileChange}
+                data-testid="input-info-file"
+              />
+              <p className="text-xs text-muted-foreground">
+                Upload CSV file with company information (optional)
+              </p>
+            </div>
+
+            <Button type="submit" className="w-full" data-testid="button-update-parameters">
+              Update Parameters
+            </Button>
           </form>
         </Form>
       </div>
@@ -145,10 +341,10 @@ export default function ClusteringForm() {
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-foreground">API Configuration</h3>
         
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onApiConfigSubmit)} className="space-y-4">
+        <Form {...apiForm}>
+          <form onSubmit={apiForm.handleSubmit(onApiConfigSubmit)} className="space-y-4">
             <FormField
-              control={form.control}
+              control={apiForm.control}
               name="endpoint"
               render={({ field }) => (
                 <FormItem>
@@ -162,42 +358,6 @@ export default function ClusteringForm() {
                       data-testid="input-endpoint"
                     />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="apiKey"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>API Key (Tùy chọn)</FormLabel>
-                  <div className="relative">
-                    <FormControl>
-                      <Input
-                        type={showApiKey ? "text" : "password"}
-                        placeholder="Để trống nếu API không cần key"
-                        {...field}
-                        onBlur={field.onBlur}
-                        className="pr-10"
-                        data-testid="input-api-key"
-                      />
-                    </FormControl>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      data-testid="button-toggle-api-key"
-                    >
-                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Chỉ cần nhập nếu API clustering yêu cầu xác thực
-                  </p>
                   <FormMessage />
                 </FormItem>
               )}
