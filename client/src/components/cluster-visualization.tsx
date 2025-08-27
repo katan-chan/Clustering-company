@@ -3,6 +3,7 @@ import { ClusterResult } from '../../../shared/schema';
 import Plotly from 'plotly.js-dist';
 import { Button } from "@/components/ui/button";
 import { Download, FileImage } from "lucide-react";
+import { Maximize } from "lucide-react";
 
 interface ClusterVisualizationProps {
   clusterResult: ClusterResult;
@@ -21,11 +22,14 @@ interface DataPoint {
 export default function ClusterVisualization({ 
   clusterResult, 
   width = 800, 
-  height = 600 
+  // increase default height so page lengthens and becomes scrollable
+  height = 1000 
 }: ClusterVisualizationProps) {
   const plotRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<DataPoint[]>([]);
   const [plotReady, setPlotReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!clusterResult.embedding || !clusterResult.size || !clusterResult.labels) {
@@ -84,7 +88,12 @@ export default function ClusterVisualization({
       };
     });
 
-    const layout = {
+  // compute layout size from actual container so Plotly fills available width and height
+  const container = plotRef.current!.parentElement as HTMLElement | null;
+  const computedWidth = container ? container.clientWidth : width;
+  const computedHeight = container ? container.clientHeight : height;
+
+  const layout = {
       title: {
         text: '3D Cluster Visualization with Company Size',
         font: { size: 16 }
@@ -113,7 +122,10 @@ export default function ClusterVisualization({
         },
         camera: {
           eye: { x: 1.5, y: 1.5, z: 1.5 }
-        }
+        },
+        // restrict 3D drag interactions to orbit/rotation only (no pan)
+        // Plotly accepts 'orbit' or 'turntable' for dragmode
+        dragmode: 'orbit'
       },
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',
@@ -128,18 +140,22 @@ export default function ClusterVisualization({
         bordercolor: 'rgba(0,0,0,0.15)',
         borderwidth: 1,
       },
-      width: width,
-      height: height
+      // size to container so CSS-driven height/width controls page scroll
+      width: computedWidth,
+      height: computedHeight,
     };
 
     const config = {
       responsive: true,
       displayModeBar: true,
       displaylogo: false,
-      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+      // remove pan for 3D so users can only rotate + zoom
+      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d', 'pan3d'],
+      // allow scroll wheel zoom
+      scrollZoom: true,
     };
 
-    Plotly.newPlot(plotRef.current, traces, layout, config).then(() => {
+  Plotly.newPlot(plotRef.current, traces, layout, config).then(() => {
       setPlotReady(true);
     });
 
@@ -172,8 +188,47 @@ export default function ClusterVisualization({
     }
   };
 
+  const toggleFullscreen = async () => {
+    const el = containerRef.current || plotRef.current;
+    if (!el) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+      // Give the browser a tick then resize the Plotly plot to fit fullscreen
+      setTimeout(() => {
+        if (plotRef.current && (Plotly as any).Plots && (Plotly as any).Plots.resize) {
+          try { (Plotly as any).Plots.resize(plotRef.current); } catch (e) { /* noop */ }
+        }
+      }, 200);
+    } catch (err) {
+      // ignore fullscreen errors (user may block)
+    }
+  };
+
+  useEffect(() => {
+    const handler = () => {
+      if (plotRef.current && (Plotly as any).Plots && (Plotly as any).Plots.resize) {
+        try { (Plotly as any).Plots.resize(plotRef.current); } catch (e) { /* noop */ }
+      }
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handler);
+    window.addEventListener('resize', handler);
+    return () => {
+      document.removeEventListener('fullscreenchange', handler);
+      window.removeEventListener('resize', handler);
+    };
+  }, []);
+
   return (
-    <div className="cluster-visualization relative">
+    <div className="cluster-visualization relative" ref={containerRef}>
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">Cluster Visualization</h3>
@@ -205,13 +260,25 @@ export default function ClusterVisualization({
             <FileImage className="h-4 w-4 mr-1" />
             SVG
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            data-testid="fullscreen-cluster"
+          >
+            <Maximize className="h-4 w-4 mr-1" />
+            {isFullscreen ? 'Exit' : 'Fullscreen'}
+          </Button>
         </div>
       </div>
-      <div
-        ref={plotRef}
-        className="border border-gray-200 rounded"
-        style={{ width, height }}
-      />
+      <div className="border border-gray-200 rounded overflow-hidden" style={{ width: '100%' }}>
+        <div
+          ref={plotRef}
+          className="w-full h-full"
+          style={{ width: '100%', height: `${height}px` }}
+        />
+      </div>
     </div>
   );
 }
