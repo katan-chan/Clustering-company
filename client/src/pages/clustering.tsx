@@ -122,26 +122,6 @@ export default function ClusteringPage() {
             )}
           </div>
 
-          {/* Export Controls */}
-          {results && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium text-foreground">Export Options</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" size="sm" data-testid="export-csv">
-                  CSV
-                </Button>
-                <Button variant="outline" size="sm" data-testid="export-json">
-                  JSON
-                </Button>
-                <Button variant="outline" size="sm" data-testid="export-png">
-                  PNG
-                </Button>
-                <Button variant="outline" size="sm" data-testid="export-svg">
-                  SVG
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

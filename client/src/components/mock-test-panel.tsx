@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { generateMockClusterData, generateMockClusterDataVariants } from "../lib/mock-data";
 import SimpleClusterVisualization from "./simple-cluster-visualization";
 import { ClusterResult } from "../../../shared/schema";
+import { Link } from "wouter";
+import { ArrowLeft } from "lucide-react";
 
 export default function MockTestPanel() {
   const [currentMockData, setCurrentMockData] = useState<ClusterResult | null>(null);
@@ -40,9 +42,17 @@ export default function MockTestPanel() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">Mock Data Test Panel</h2>
-        <p className="text-muted-foreground">Test cluster visualization with different mock data patterns</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold mb-2">Mock Data Test Panel</h2>
+          <p className="text-muted-foreground">Test cluster visualization with different mock data patterns</p>
+        </div>
+        <Link href="/">
+          <Button variant="outline" className="flex items-center gap-2" data-testid="button-back-to-main">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Main
+          </Button>
+        </Link>
       </div>
 
       {/* Mock Data Controls */}

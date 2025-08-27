@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ClusterResult } from '../../../shared/schema';
+import Plotly from 'plotly.js-dist';
+import { Button } from "@/components/ui/button";
+import { Download, FileImage } from "lucide-react";
 
 interface ClusterVisualizationProps {
   clusterResult: ClusterResult;
@@ -20,8 +23,9 @@ export default function ClusterVisualization({
   width = 800, 
   height = 600 
 }: ClusterVisualizationProps) {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const plotRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<DataPoint[]>([]);
+  const [plotReady, setPlotReady] = useState(false);
 
   useEffect(() => {
     if (!clusterResult.embedding || !clusterResult.size || !clusterResult.labels) {
@@ -44,207 +48,156 @@ export default function ClusterVisualization({
   }, [clusterResult]);
 
   useEffect(() => {
-    if (!data.length || !svgRef.current) return;
+    if (!data.length || !plotRef.current) return;
 
-    const svg = d3.select(svgRef.current);
-    svg.selectAll("*").remove();
+    // Get unique clusters and define colors
+    const clusters = Array.from(new Set(data.map(d => d.cluster))).sort();
+    const colors = [
+      '#1976D2', '#4CAF50', '#F44336', '#FF9800', '#9C27B0', '#FF5722',
+      '#607D8B', '#795548', '#E91E63', '#00BCD4', '#8BC34A', '#FFC107'
+    ];
 
-    const margin = { top: 20, right: 20, bottom: 20, left: 20 };
-    const innerWidth = width - margin.left - margin.right;
-    const innerHeight = height - margin.top - margin.bottom;
-
-    // Create scales
-    const xExtent = d3.extent(data, d => d.x) as [number, number];
-    const yExtent = d3.extent(data, d => d.y) as [number, number];
-    const sizeExtent = d3.extent(data, d => d.size) as [number, number];
-
-    const xScale = d3.scaleLinear()
-      .domain(xExtent)
-      .range([0, innerWidth]);
-
-    const yScale = d3.scaleLinear()
-      .domain(yExtent)
-      .range([innerHeight, 0]);
-
-    const sizeScale = d3.scaleLinear()
-      .domain(sizeExtent)
-      .range([3, 15]);
-
-    const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
-
-    const g = svg.append("g")
-      .attr("transform", `translate(${margin.left},${margin.top})`);
-
-    // Create Voronoi diagram
-    const voronoi = Delaunay
-      .from(data, (d: DataPoint) => xScale(d.x), (d: DataPoint) => yScale(d.y))
-      .voronoi([0, 0, innerWidth, innerHeight]);
-
-    // Draw Voronoi cells grouped by cluster
-    const clusterGroups = d3.group(data, d => d.cluster);
-    
-    clusterGroups.forEach((points, cluster) => {
-      const clusterColor = colorScale(cluster.toString());
+    // Create traces for each cluster
+    const traces = clusters.map((clusterId, index) => {
+      const clusterPoints = data.filter(d => d.cluster === clusterId);
       
-      points.forEach((point, i) => {
-        const cell = voronoi.renderCell(point.index);
-        if (cell) {
-          g.append("path")
-            .attr("d", cell)
-            .attr("fill", clusterColor)
-            .attr("fill-opacity", 0.1)
-            .attr("stroke", clusterColor)
-            .attr("stroke-width", 1)
-            .attr("stroke-opacity", 0.3);
-        }
-      });
+      return {
+        x: clusterPoints.map(d => d.x),
+        y: clusterPoints.map(d => d.y),
+        mode: 'markers' as const,
+        type: 'scatter' as const,
+        name: `Cluster ${clusterId}`,
+        marker: {
+          color: colors[index % colors.length],
+          size: clusterPoints.map(d => Math.max(5, d.size * 10)), // Scale size for visibility
+          opacity: 0.8,
+          line: {
+            color: 'white',
+            width: 1
+          }
+        },
+        text: clusterPoints.map(d => 
+          `Company ${d.index}<br>Cluster: ${d.cluster}<br>Size: ${d.size.toFixed(2)}<br>Position: (${d.x.toFixed(2)}, ${d.y.toFixed(2)})`
+        ),
+        hovertemplate: '%{text}<extra></extra>',
+      };
     });
 
-    // Create size color scale for heat map
-    const heatColorScale = d3.scaleSequential(d3.interpolateYlOrRd)
-      .domain(sizeExtent);
+    const layout = {
+      title: {
+        text: 'Cluster Visualization with Company Size',
+        font: { size: 16 }
+      },
+      xaxis: {
+        title: 'Component 1',
+        showgrid: true,
+        gridcolor: 'rgba(0,0,0,0.1)',
+        zeroline: true,
+        zerolinecolor: 'rgba(0,0,0,0.3)',
+      },
+      yaxis: {
+        title: 'Component 2',
+        showgrid: true,
+        gridcolor: 'rgba(0,0,0,0.1)',
+        zeroline: true,
+        zerolinecolor: 'rgba(0,0,0,0.3)',
+      },
+      plot_bgcolor: 'white',
+      paper_bgcolor: 'white',
+      margin: { l: 60, r: 200, t: 60, b: 60 },
+      showlegend: true,
+      legend: {
+        x: 1.02,
+        xanchor: 'left',
+        y: 1,
+        yanchor: 'top',
+        bgcolor: 'rgba(255,255,255,0.95)',
+        bordercolor: 'rgba(0,0,0,0.15)',
+        borderwidth: 1,
+      },
+      width: width,
+      height: height
+    };
 
-    // Draw nodes with heat map coloring
-    g.selectAll(".node")
-      .data(data)
-      .enter()
-      .append("circle")
-      .attr("class", "node")
-      .attr("cx", d => xScale(d.x))
-      .attr("cy", d => yScale(d.y))
-      .attr("r", d => sizeScale(d.size))
-      .attr("fill", d => heatColorScale(d.size))
-      .attr("stroke", d => colorScale(d.cluster.toString()))
-      .attr("stroke-width", 2)
-      .attr("opacity", 0.8)
-      .on("mouseover", function(event, d) {
-        // Tooltip
-        const tooltip = d3.select("body")
-          .append("div")
-          .attr("class", "tooltip")
-          .style("position", "absolute")
-          .style("background", "rgba(0,0,0,0.8)")
-          .style("color", "white")
-          .style("padding", "8px")
-          .style("border-radius", "4px")
-          .style("font-size", "12px")
-          .style("pointer-events", "none")
-          .style("z-index", "1000");
+    const config = {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+    };
 
-        tooltip.html(`
-          <div>Company ${d.index}</div>
-          <div>Cluster: ${d.cluster}</div>
-          <div>Size: ${d.size.toFixed(2)}</div>
-          <div>Position: (${d.x.toFixed(2)}, ${d.y.toFixed(2)})</div>
-        `)
-        .style("left", (event.pageX + 10) + "px")
-        .style("top", (event.pageY - 10) + "px");
+    Plotly.newPlot(plotRef.current, traces, layout, config).then(() => {
+      setPlotReady(true);
+    });
 
-        // Highlight node
-        d3.select(this)
-          .attr("stroke-width", 4)
-          .attr("opacity", 1);
-      })
-      .on("mouseout", function() {
-        d3.selectAll(".tooltip").remove();
-        d3.select(this)
-          .attr("stroke-width", 2)
-          .attr("opacity", 0.8);
-      });
-
-    // Add legend for clusters
-    const legend = g.append("g")
-      .attr("class", "legend")
-      .attr("transform", `translate(${innerWidth - 120}, 20)`);
-
-    const clusters = Array.from(new Set(data.map(d => d.cluster))).sort();
-    
-    legend.selectAll(".legend-item")
-      .data(clusters)
-      .enter()
-      .append("g")
-      .attr("class", "legend-item")
-      .attr("transform", (d, i) => `translate(0, ${i * 20})`)
-      .each(function(d) {
-        const g = d3.select(this);
-        g.append("circle")
-          .attr("r", 6)
-          .attr("fill", colorScale(d.toString()))
-          .attr("stroke", "#333")
-          .attr("stroke-width", 1);
-        
-        g.append("text")
-          .attr("x", 12)
-          .attr("y", 4)
-          .text(`Cluster ${d}`)
-          .attr("font-size", "12px")
-          .attr("fill", "#333");
-      });
-
-    // Add size legend (heat map)
-    const sizeLegend = g.append("g")
-      .attr("class", "size-legend")
-      .attr("transform", `translate(20, ${innerHeight - 80})`);
-
-    sizeLegend.append("text")
-      .attr("x", 0)
-      .attr("y", -10)
-      .text("Company Size")
-      .attr("font-size", "12px")
-      .attr("font-weight", "bold")
-      .attr("fill", "#333");
-
-    const legendScale = d3.scaleLinear()
-      .domain(sizeExtent)
-      .range([0, 100]);
-
-    const legendAxis = d3.axisBottom(legendScale)
-      .ticks(5)
-      .tickFormat(d3.format(".1f"));
-
-    // Create gradient for size legend
-    const gradient = svg.append("defs")
-      .append("linearGradient")
-      .attr("id", "size-gradient")
-      .attr("x1", "0%")
-      .attr("x2", "100%")
-      .attr("y1", "0%")
-      .attr("y2", "0%");
-
-    gradient.selectAll("stop")
-      .data(d3.range(0, 1.1, 0.1))
-      .enter()
-      .append("stop")
-      .attr("offset", d => `${d * 100}%`)
-      .attr("stop-color", d => heatColorScale(sizeExtent[0] + d * (sizeExtent[1] - sizeExtent[0])));
-
-    sizeLegend.append("rect")
-      .attr("width", 100)
-      .attr("height", 15)
-      .attr("fill", "url(#size-gradient)")
-      .attr("stroke", "#333")
-      .attr("stroke-width", 1);
-
-    sizeLegend.append("g")
-      .attr("transform", "translate(0, 15)")
-      .call(legendAxis);
-
+    return () => {
+      if (plotRef.current) {
+        Plotly.purge(plotRef.current);
+      }
+    };
   }, [data, width, height]);
 
+  const downloadPlotAsPNG = () => {
+    if (plotRef.current && plotReady) {
+      Plotly.downloadImage(plotRef.current, {
+        format: 'png',
+        width: 1200,
+        height: 800,
+        filename: 'cluster-visualization'
+      });
+    }
+  };
+
+  const downloadPlotAsSVG = () => {
+    if (plotRef.current && plotReady) {
+      Plotly.downloadImage(plotRef.current, {
+        format: 'svg',
+        width: 1200,
+        height: 800,
+        filename: 'cluster-visualization'
+      });
+    }
+  };
+
   return (
-    <div className="cluster-visualization">
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold">Cluster Visualization</h3>
-        <p className="text-sm text-gray-600">
-          Voronoi diagram with company size heat map • Dataset: {clusterResult.dataset_id} • 
-          Clusters: {clusterResult.best_k} • Samples: {clusterResult.n_samples}
-        </p>
+    <div className="cluster-visualization relative">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Cluster Visualization</h3>
+          <p className="text-sm text-gray-600">
+            Voronoi diagram with company size heat map • Dataset: {clusterResult.dataset_id} • 
+            Clusters: {clusterResult.best_k} • Samples: {clusterResult.n_samples}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadPlotAsPNG}
+            title="Download as PNG"
+            data-testid="download-cluster-png"
+            disabled={!plotReady}
+          >
+            <Download className="h-4 w-4 mr-1" />
+            PNG
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadPlotAsSVG}
+            title="Download as SVG"
+            data-testid="download-cluster-svg"
+            disabled={!plotReady}
+          >
+            <FileImage className="h-4 w-4 mr-1" />
+            SVG
+          </Button>
+        </div>
       </div>
-      <svg
-        ref={svgRef}
-        width={width}
-        height={height}
+      <div
+        ref={plotRef}
         className="border border-gray-200 rounded"
+        style={{ width, height }}
       />
     </div>
   );

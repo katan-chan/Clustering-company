@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff, Download } from "lucide-react";
 import IndustrySelector from "@/components/industry-selector";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -28,7 +28,7 @@ const apiSchema = z.object({
 });
 
 export default function ClusteringForm() {
-  const { parameters, apiConfig, updateParameters, updateApiConfig, infoFile: storeInfoFile } = useClusteringStore();
+  const { parameters, apiConfig, updateParameters, updateApiConfig, infoFile: storeInfoFile, results } = useClusteringStore();
   const { toast } = useToast();
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("disconnected");
   const [infoFile, setInfoFile] = useState<File | null>(null);
@@ -193,6 +193,66 @@ export default function ClusteringForm() {
     }
   };
 
+  const downloadInputJson = (data: { lambda: number; k: number; pca_dim: number; level_value: string }) => {
+    const inputJson = {
+      pca_dim: data.pca_dim,
+      lambda: data.lambda,
+      k: data.k,
+      level_value: data.level_value
+    };
+    
+    const blob = new Blob([JSON.stringify(inputJson, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clustering-input.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Input JSON Downloaded",
+      description: "Clustering input parameters have been downloaded as JSON",
+      variant: "default",
+    });
+  };
+
+  const downloadOutputJson = () => {
+    if (!results?.clusterResult) {
+      toast({
+        title: "No Results Available",
+        description: "Please run clustering first to generate output data",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const outputJson = {
+      best_k: results.clusterResult.best_k,
+      dataset_id: results.clusterResult.dataset_id,
+      embedding: results.clusterResult.embedding,
+      labels: results.clusterResult.labels,
+      level: results.clusterResult.level || 1,
+      level_value: results.clusterResult.level_value,
+      mode: results.clusterResult.mode || "subset",
+      n_samples: results.clusterResult.n_samples,
+      size: results.clusterResult.size
+    };
+    
+    const blob = new Blob([JSON.stringify(outputJson, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clustering-output.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Output JSON Downloaded",
+      description: "Clustering results have been downloaded as JSON",
+      variant: "default",
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Algorithm Parameters */}
@@ -328,9 +388,21 @@ export default function ClusteringForm() {
               </p>
             </div>
 
-            <Button type="submit" className="w-full" data-testid="button-update-parameters">
-              Update Parameters
-            </Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1" data-testid="button-update-parameters">
+                Update Parameters
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => downloadInputJson(parametersForm.getValues())}
+                className="flex items-center gap-2"
+                data-testid="button-download-input"
+              >
+                <Download className="h-4 w-4" />
+                Input JSON
+              </Button>
+            </div>
           </form>
         </Form>
       </div>
@@ -385,9 +457,22 @@ export default function ClusteringForm() {
               )}
             </div>
             
-            <Button type="submit" className="w-full" data-testid="button-update-config">
-              Update Configuration
-            </Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1" data-testid="button-update-config">
+                Update Configuration
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={downloadOutputJson}
+                className="flex items-center gap-2"
+                data-testid="button-download-output"
+                disabled={!results?.clusterResult}
+              >
+                <Download className="h-4 w-4" />
+                Output JSON
+              </Button>
+            </div>
           </form>
         </Form>
       </div>

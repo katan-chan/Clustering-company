@@ -3,7 +3,7 @@ import { useClusteringStore } from "@/lib/clustering-store";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Move, ZoomIn, Lasso, Maximize, ExternalLink } from "lucide-react";
+import { Move, ZoomIn, Lasso, Maximize, ExternalLink, Download, FileImage } from "lucide-react";
 import Plotly from "plotly.js-dist";
 
 export default function ScatterPlot() {
@@ -36,9 +36,10 @@ export default function ScatterPlot() {
                 link.download = `${selectedProjectionType}_projection.png`;
                 link.click();
               }}
+              data-testid="download-projection-png"
             >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Download
+              <Download className="w-4 h-4 mr-2" />
+              PNG
             </Button>
           </div>
         </div>
@@ -106,7 +107,7 @@ export default function ScatterPlot() {
         name: `Cluster ${clusterId} (${clusterPoints.length})`,
         marker: {
           color: colors[index % colors.length],
-          size: clusterPoints.map(d => (d.size || 0) * 10 + 5), // Dynamic size based on backend data + offset
+          size: clusterPoints.map(d => ((d as any).size || 0) * 10 + 5), // Dynamic size based on backend data + offset
           opacity: showCluster ? 0.7 : 0.1,
         },
         text: clusterPoints.map(d => 
@@ -226,6 +227,28 @@ export default function ScatterPlot() {
     }
   };
 
+  const downloadPlotAsPNG = () => {
+    if (plotRef.current && plotReady) {
+      Plotly.downloadImage(plotRef.current, {
+        format: 'png',
+        width: 1200,
+        height: 800,
+        filename: 'cluster-visualization'
+      });
+    }
+  };
+
+  const downloadPlotAsSVG = () => {
+    if (plotRef.current && plotReady) {
+      Plotly.downloadImage(plotRef.current, {
+        format: 'svg',
+        width: 1200,
+        height: 800,
+        filename: 'cluster-visualization'
+      });
+    }
+  };
+
   // Render scatter plot view
   const renderScatterPlot = () => {
     if (isRunning) {
@@ -322,6 +345,32 @@ export default function ScatterPlot() {
             >
               <Maximize className="h-4 w-4" />
             </Button>
+            
+            {/* Download buttons */}
+            <div className="border-l border-border pl-2 ml-2 flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadPlotAsPNG}
+                title="Download as PNG"
+                data-testid="download-png"
+                disabled={!plotReady}
+              >
+                <Download className="h-4 w-4 mr-1" />
+                PNG
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadPlotAsSVG}
+                title="Download as SVG"
+                data-testid="download-svg"
+                disabled={!plotReady}
+              >
+                <FileImage className="h-4 w-4 mr-1" />
+                SVG
+              </Button>
+            </div>
           </div>
         </div>
 
