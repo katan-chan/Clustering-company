@@ -64,12 +64,13 @@ export default function ClusterVisualization({
       return {
         x: clusterPoints.map(d => d.x),
         y: clusterPoints.map(d => d.y),
+        z: clusterPoints.map(d => d.size),
         mode: 'markers' as const,
-        type: 'scatter' as const,
+        type: 'scatter3d' as const,
         name: `Cluster ${clusterId}`,
         marker: {
           color: colors[index % colors.length],
-          size: clusterPoints.map(d => Math.max(5, d.size * 10)), // Scale size for visibility
+          size: 8,
           opacity: 0.8,
           line: {
             color: 'white',
@@ -77,7 +78,7 @@ export default function ClusterVisualization({
           }
         },
         text: clusterPoints.map(d => 
-          `Company ${d.index}<br>Cluster: ${d.cluster}<br>Size: ${d.size.toFixed(2)}<br>Position: (${d.x.toFixed(2)}, ${d.y.toFixed(2)})`
+          `Company ${d.index}<br>Cluster: ${d.cluster}<br>Size: ${d.size.toFixed(2)}<br>Position: (${d.x.toFixed(2)}, ${d.y.toFixed(2)}, ${d.size.toFixed(2)})`
         ),
         hovertemplate: '%{text}<extra></extra>',
       };
@@ -85,22 +86,34 @@ export default function ClusterVisualization({
 
     const layout = {
       title: {
-        text: 'Cluster Visualization with Company Size',
+        text: '3D Cluster Visualization with Company Size',
         font: { size: 16 }
       },
-      xaxis: {
-        title: 'Component 1',
-        showgrid: true,
-        gridcolor: 'rgba(0,0,0,0.1)',
-        zeroline: true,
-        zerolinecolor: 'rgba(0,0,0,0.3)',
-      },
-      yaxis: {
-        title: 'Component 2',
-        showgrid: true,
-        gridcolor: 'rgba(0,0,0,0.1)',
-        zeroline: true,
-        zerolinecolor: 'rgba(0,0,0,0.3)',
+      scene: {
+        xaxis: {
+          title: 'Embedding X',
+          showgrid: true,
+          gridcolor: 'rgba(0,0,0,0.1)',
+          zeroline: true,
+          zerolinecolor: 'rgba(0,0,0,0.3)',
+        },
+        yaxis: {
+          title: 'Embedding Y',
+          showgrid: true,
+          gridcolor: 'rgba(0,0,0,0.1)',
+          zeroline: true,
+          zerolinecolor: 'rgba(0,0,0,0.3)',
+        },
+        zaxis: {
+          title: 'Size',
+          showgrid: true,
+          gridcolor: 'rgba(0,0,0,0.1)',
+          zeroline: true,
+          zerolinecolor: 'rgba(0,0,0,0.3)',
+        },
+        camera: {
+          eye: { x: 1.5, y: 1.5, z: 1.5 }
+        }
       },
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',

@@ -63,19 +63,38 @@ export default function ScatterPlot() {
   useEffect(() => {
     if (!plotRef.current) return;
 
-    // Generate mock data for visualization
-    const mockData = Array.from({ length: 50 }, (_, i) => ({
-      id: `mock-${i}`,
-      info: {},
-      embedding: [Math.random() * 100, Math.random() * 100],
-      pca: {
-        x: (Math.random() - 0.5) * 20,
-        y: (Math.random() - 0.5) * 20
-      },
-      cluster: Math.floor(Math.random() * 4)
-    }));
+    // Transform API data or generate mock data for visualization
+    let processedData;
+    
+    if (results?.clusterResult?.embedding && results?.clusterResult?.labels && results?.clusterResult?.size) {
+      // Process real API data
+      processedData = results.clusterResult.embedding.map((coords: number[], i: number) => ({
+        id: `point-${i}`,
+        info: {},
+        embedding: coords,
+        pca: {
+          x: coords[0], // Embedding X coordinate
+          y: coords[1], // Embedding Y coordinate
+          z: results.clusterResult.size![i] || 0 // Size value for Z
+        },
+        cluster: results.clusterResult.labels![i] || 0
+      }));
+    } else {
+      // Generate mock data for visualization
+      processedData = Array.from({ length: 50 }, (_, i) => ({
+        id: `mock-${i}`,
+        info: {},
+        embedding: [Math.random() * 100, Math.random() * 100],
+        pca: {
+          x: (Math.random() - 0.5) * 20,
+          y: (Math.random() - 0.5) * 20,
+          z: Math.random() * 10
+        },
+        cluster: Math.floor(Math.random() * 4)
+      }));
+    }
 
-    const dataPoints = results?.dataPoints || mockData;
+    const dataPoints = processedData;
     
     console.log("🔍 Debug visualization data:");
     console.log("📊 Total dataPoints:", dataPoints.length);
@@ -102,16 +121,17 @@ export default function ScatterPlot() {
       return {
         x: clusterPoints.map(d => d.pca?.x || 0),
         y: clusterPoints.map(d => d.pca?.y || 0),
+        z: clusterPoints.map(d => d.pca?.z || ((d as any).size || 0)),
         mode: 'markers' as const,
-        type: 'scatter' as const,
+        type: 'scatter3d' as const,
         name: `Cluster ${clusterId} (${clusterPoints.length})`,
         marker: {
           color: colors[index % colors.length],
-          size: clusterPoints.map(d => ((d as any).size || 0) * 10 + 5), // Dynamic size based on backend data + offset
+          size: 8,
           opacity: showCluster ? 0.7 : 0.1,
         },
         text: clusterPoints.map(d => 
-          `ID: ${d.id}<br>Cluster: ${d.cluster}<br>PCA: (${d.pca?.x.toFixed(2)}, ${d.pca?.y.toFixed(2)})`
+          `ID: ${d.id}<br>Cluster: ${d.cluster}<br>X: ${d.pca?.x.toFixed(2)}<br>Y: ${d.pca?.y.toFixed(2)}<br>Z: ${(d.pca?.z || ((d as any).size || 0)).toFixed(2)}`
         ),
         hovertemplate: '%{text}<extra></extra>',
         visible: showCluster,
@@ -120,42 +140,55 @@ export default function ScatterPlot() {
 
     const layout = {
       title: {
-        text: '',
+        text: '3D Cluster Visualization',
         font: { size: 16 }
       },
-      xaxis: {
-        title: {
-          text: 'PCA Component 1 (34.2% variance explained)',
-          font: { size: 14, color: '#374151' }
+      scene: {
+        xaxis: {
+          title: {
+            text: 'Embedding X',
+            font: { size: 14, color: '#374151' }
+          },
+          showgrid: true,
+          gridcolor: 'rgba(0,0,0,0.1)',
+          showticklabels: true,
+          tickformat: '.2f',
+          tickfont: { size: 12, color: '#6B7280' },
+          zeroline: true,
+          zerolinecolor: 'rgba(0,0,0,0.3)',
+          zerolinewidth: 1,
         },
-        showgrid: true,
-        gridcolor: 'rgba(0,0,0,0.1)',
-        showticklabels: true,
-        tickformat: '.2f',
-        tickfont: { size: 12, color: '#6B7280' },
-        zeroline: true,
-        zerolinecolor: 'rgba(0,0,0,0.3)',
-        zerolinewidth: 1,
-        showline: true,
-        linecolor: 'rgba(0,0,0,0.2)',
-        mirror: true,
-      },
-      yaxis: {
-        title: {
-          text: 'PCA Component 2 (22.8% variance explained)',
-          font: { size: 14, color: '#374151' }
+        yaxis: {
+          title: {
+            text: 'Embedding Y',
+            font: { size: 14, color: '#374151' }
+          },
+          showgrid: true,
+          gridcolor: 'rgba(0,0,0,0.1)',
+          showticklabels: true,
+          tickformat: '.2f',
+          tickfont: { size: 12, color: '#6B7280' },
+          zeroline: true,
+          zerolinecolor: 'rgba(0,0,0,0.3)',
+          zerolinewidth: 1,
         },
-        showgrid: true,
-        gridcolor: 'rgba(0,0,0,0.1)',
-        showticklabels: true,
-        tickformat: '.2f',
-        tickfont: { size: 12, color: '#6B7280' },
-        zeroline: true,
-        zerolinecolor: 'rgba(0,0,0,0.3)',
-        zerolinewidth: 1,
-        showline: true,
-        linecolor: 'rgba(0,0,0,0.2)',
-        mirror: true,
+        zaxis: {
+          title: {
+            text: 'Size',
+            font: { size: 14, color: '#374151' }
+          },
+          showgrid: true,
+          gridcolor: 'rgba(0,0,0,0.1)',
+          showticklabels: true,
+          tickformat: '.2f',
+          tickfont: { size: 12, color: '#6B7280' },
+          zeroline: true,
+          zerolinecolor: 'rgba(0,0,0,0.3)',
+          zerolinewidth: 1,
+        },
+        camera: {
+          eye: { x: 1.5, y: 1.5, z: 1.5 }
+        }
       },
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',
@@ -191,13 +224,13 @@ export default function ScatterPlot() {
       
       switch (activeTool) {
         case 'pan':
-          Plotly.relayout(plotDiv, { dragmode: 'pan' });
+          Plotly.relayout(plotDiv, { 'scene.dragmode': 'pan' });
           break;
         case 'zoom':
-          Plotly.relayout(plotDiv, { dragmode: 'zoom' });
+          Plotly.relayout(plotDiv, { 'scene.dragmode': 'zoom' });
           break;
         case 'lasso':
-          Plotly.relayout(plotDiv, { dragmode: 'lasso' });
+          Plotly.relayout(plotDiv, { 'scene.dragmode': 'lasso' });
           break;
       }
     }
@@ -221,8 +254,12 @@ export default function ScatterPlot() {
   const resetZoom = () => {
     if (plotRef.current && plotReady) {
       Plotly.relayout(plotRef.current, {
-        'xaxis.autorange': true,
-        'yaxis.autorange': true
+        'scene.xaxis.autorange': true,
+        'scene.yaxis.autorange': true,
+        'scene.zaxis.autorange': true,
+        'scene.camera': {
+          eye: { x: 1.5, y: 1.5, z: 1.5 }
+        }
       });
     }
   };
