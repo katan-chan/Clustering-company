@@ -20,7 +20,7 @@ const parametersSchema = z.object({
   lambda: clusteringParamsSchema.shape.lambda,
   k: z.number().int().min(2).max(20),
   pca_dim: clusteringParamsSchema.shape.pca_dim,
-  level_value: clusteringParamsSchema.shape.level_value,
+  level_value: z.array(z.string()).min(1, "Chọn ít nhất 1 mã ngành"),
 });
 
 const apiSchema = z.object({
@@ -41,7 +41,7 @@ export default function ClusteringForm() {
       lambda: parameters.lambda,
       k: Array.isArray(parameters.k) ? parameters.k[0] : parameters.k,
       pca_dim: parameters.pca_dim,
-      level_value: parameters.level_value,
+      level_value: Array.isArray(parameters.level_value) ? parameters.level_value : [],
     },
   });
 
@@ -52,7 +52,7 @@ export default function ClusteringForm() {
     },
   });
 
-  const onParametersSubmit = (data: { lambda: number; k: number; pca_dim: number; level_value: string }) => {
+  const onParametersSubmit = (data: { lambda: number; k: number; pca_dim: number; level_value: string[] }) => {
     updateParameters({
       lambda: data.lambda,
       k: data.k,
@@ -193,7 +193,7 @@ export default function ClusteringForm() {
     }
   };
 
-  const downloadInputJson = (data: { lambda: number; k: number; pca_dim: number; level_value: string }) => {
+  const downloadInputJson = (data: { lambda: number; k: number; pca_dim: number; level_value: string[] }) => {
     const inputJson = {
       pca_dim: data.pca_dim,
       lambda: data.lambda,
@@ -226,8 +226,11 @@ export default function ClusteringForm() {
       return;
     }
     
+    // Handle new API response format with companies array
     const outputJson = {
       best_k: results.clusterResult.best_k,
+      companies: results.clusterResult.companies || [],
+      // Legacy fields for backward compatibility
       dataset_id: results.clusterResult.dataset_id,
       embedding: results.clusterResult.embedding,
       labels: results.clusterResult.labels,

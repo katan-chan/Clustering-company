@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import { ClusteringParams, ApiConfig, ClusterResult, ClusterMetrics, DataPoint } from "../../../shared/schema";
+import { ClusteringParams, ApiConfig, ClusterResult, ClusterMetrics, DataPoint, Company, Enterprise } from "../../../shared/schema";
 import { clusteringApi } from "./clustering-api";
 
 interface LogEntry {
@@ -60,7 +60,7 @@ export const useClusteringStore = create<ClusteringState>()(
         lambda: 0.5,
         k: 3,
         pca_dim: 128,
-        level_value: "",
+        level_value: [],
       },
       apiConfig: {
         endpoint: "",
@@ -189,9 +189,56 @@ export const useClusteringStore = create<ClusteringState>()(
           // Process cluster result data
           let finalDataPoints: DataPoint[] = [];
           
-          // Use direct data from clusterResult (embedding coordinates and labels)
-          if (clusterResult.embedding && clusterResult.labels) {
-            console.log("🔧 Processing direct embedding data from backend");
+          // Handle new API response format with companies array
+          if (clusterResult.companies && Array.isArray(clusterResult.companies)) {
+            console.log("🔧 Processing new API response format with companies array");
+            console.log("🏢 Number of companies:", clusterResult.companies.length);
+            
+            let pointIndex = 0;
+            clusterResult.companies.forEach((company: Company) => {
+              if (company.enterprise && Array.isArray(company.enterprise)) {
+                company.enterprise.forEach((enterprise: Enterprise) => {
+                  const clusterLabel = enterprise.cluster || enterprise.Label || 0;
+                  const embedding = enterprise.embedding || [];
+                  const pcaX = enterprise.pca2_x || 0;
+                  const pcaY = enterprise.pca2_y || 0;
+                  
+                  // Extract company information
+                  const companyInfo = {
+                    name: enterprise.name || 'Unknown Company',
+                    taxcode: enterprise.taxcode || '',
+                    sector_name: enterprise.sector_name || '',
+                    sector_unique_id: enterprise.sector_unique_id || company.sector_unique_id || '',
+                    empl_qtty: enterprise.empl_qtty || 0,
+                    yearreport: enterprise.yearreport || 2024,
+                    s_DT_TTM: enterprise.s_DT_TTM || 0,
+                    s_EMPL: enterprise.s_EMPL || 0,
+                    s_TTS: enterprise.s_TTS || 0,
+                    s_VCSH: enterprise.s_VCSH || 0
+                  };
+                  
+                  finalDataPoints.push({
+                    id: pointIndex.toString(),
+                    info: companyInfo,
+                    embedding: embedding,
+                    pca: {
+                      x: pcaX,
+                      y: pcaY
+                    },
+                    cluster: clusterLabel,
+                    size: 1, // Default size, can be calculated later
+                  });
+                  
+                  pointIndex++;
+                });
+              }
+            });
+            
+            console.log("✅ Created", finalDataPoints.length, "data points from companies data");
+            console.log("📋 Sample data point:", finalDataPoints[0]);
+          } else if (clusterResult.embedding && clusterResult.labels) {
+            // Fallback: Use direct data from clusterResult (old format)
+            console.log("🔧 Processing direct embedding data from backend (legacy format)");
             console.log("📊 Embedding length:", clusterResult.embedding.length);
             console.log("🏷️ Labels length:", clusterResult.labels.length);
             
@@ -204,11 +251,11 @@ export const useClusteringStore = create<ClusteringState>()(
                 info: {},
                 embedding: coords,
                 pca: {
-                  x: coords[0], // Use actual PCA coordinates from backend
+                  x: coords[0],
                   y: coords[1]
                 },
                 cluster: clusterLabel,
-                size: clusterSize, // Add size data from backend
+                size: clusterSize,
               });
             });
             

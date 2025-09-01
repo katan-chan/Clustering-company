@@ -11,7 +11,7 @@ export default function ScatterPlot() {
   const plotRef = useRef<HTMLDivElement>(null);
   const [plotReady, setPlotReady] = useState(false);
   const [selectedClusters, setSelectedClusters] = useState<number[]>([]);
-  const [activeTool, setActiveTool] = useState<"pan" | "zoom" | "lasso">("pan");
+  const [activeTool, setActiveTool] = useState<"pan" | "zoom" | "lasso">("lasso");
 
   // Check if we should show projection image
   const shouldShowProjectionImage = (results as any)?.projectionImages && 
@@ -63,42 +63,71 @@ export default function ScatterPlot() {
   useEffect(() => {
     if (!plotRef.current) return;
 
-    // Transform API data or generate mock data for visualization
+    // Transform API data for visualization
     let processedData;
     
-    if (results?.clusterResult?.embedding && results?.clusterResult?.labels && results?.clusterResult?.size) {
-      // Process real API data
+    if (results?.clusterResult?.companies && Array.isArray(results.clusterResult.companies)) {
+      // Process new API format with companies array
+      processedData = [];
+      let pointIndex = 0;
+      
+      results.clusterResult.companies.forEach((company: any) => {
+        if (company.enterprise && Array.isArray(company.enterprise)) {
+          company.enterprise.forEach((enterprise: any) => {
+            const clusterLabel = enterprise.cluster || enterprise.Label || 0;
+            const embedding = enterprise.embedding || [0, 0];
+            
+            // Calculate size as length of embedding vector excluding last 4 elements
+            let calculatedSize = 0.1; // default minimum size
+            if (enterprise.embedding && Array.isArray(enterprise.embedding) && enterprise.embedding.length > 4) {
+              const embeddingSubset = enterprise.embedding.slice(0, -4); // exclude last 4 elements
+              calculatedSize = Math.sqrt(embeddingSubset.reduce((sum: number, val: number) => sum + val * val, 0)); // vector length
+              calculatedSize = Math.max(0.1, calculatedSize); // ensure minimum size
+            }
+            
+            processedData.push({
+              id: `company-${pointIndex}`,
+              info: {
+                name: enterprise.name || 'Unknown Company',
+                taxcode: enterprise.taxcode || '',
+                sector: enterprise.sector_name || '',
+                sector_unique_id: enterprise.sector_unique_id || company.sector_unique_id || '',
+                employees: enterprise.empl_qtty || 0
+              },
+              embedding: embedding,
+              pca: {
+                x: embedding[0],
+                y: embedding[1],
+                z: calculatedSize
+              },
+              cluster: clusterLabel
+            });
+            pointIndex++;
+          });
+        }
+      });
+    } else if (results?.clusterResult?.embedding && results?.clusterResult?.labels && results?.clusterResult?.size) {
+      // Process legacy API format
       processedData = results.clusterResult.embedding.map((coords: number[], i: number) => ({
         id: `point-${i}`,
         info: {},
         embedding: coords,
         pca: {
-          x: coords[0], // Embedding X coordinate
-          y: coords[1], // Embedding Y coordinate
-          z: results.clusterResult.size![i] || 0 // Size value for Z
+          x: coords[0],
+          y: coords[1],
+          z: results.clusterResult.size![i] || 0
         },
         cluster: results.clusterResult.labels![i] || 0
       }));
     } else {
-      // Generate mock data for visualization
-      processedData = Array.from({ length: 50 }, (_, i) => ({
-        id: `mock-${i}`,
-        info: {},
-        embedding: [Math.random() * 100, Math.random() * 100],
-        pca: {
-          x: (Math.random() - 0.5) * 20,
-          y: (Math.random() - 0.5) * 20,
-          z: Math.random() * 10
-        },
-        cluster: Math.floor(Math.random() * 4)
-      }));
+      // No data available
+      processedData = [];
     }
 
     const dataPoints = processedData;
     
     console.log("🔍 Debug visualization data:");
     console.log("📊 Total dataPoints:", dataPoints.length);
-    console.log("📋 DataPoints sample:", dataPoints.slice(0, 3));
     console.log("🏷️ All cluster values:", dataPoints.map(d => d.cluster));
     
     const clusters = Array.from(new Set(dataPoints.map(d => d.cluster).filter(c => c !== null && c !== undefined))).sort();
@@ -110,32 +139,84 @@ export default function ScatterPlot() {
       '#607D8B', '#795548', '#E91E63', '#00BCD4', '#8BC34A', '#FFC107'
     ];
 
-    // Prepare data for each cluster
-    const traces = clusters.map((clusterId, index) => {
+    // Create 3D mesh column traces for each cluster
+    const traces: any[] = [];
+    
+    clusters.forEach((clusterId, index) => {
       const clusterPoints = dataPoints.filter(d => d.cluster === clusterId);
       const showCluster = selectedClusters.length === 0 || selectedClusters.includes(clusterId!);
+      const clusterColor = colors[index % colors.length];
       
       console.log(`🎨 Cluster ${clusterId}: ${clusterPoints.length} points`);
-      console.log(`📍 Points for cluster ${clusterId}:`, clusterPoints.map(p => `(${p.pca?.x}, ${p.pca?.y})`));
       
-      return {
-        x: clusterPoints.map(d => d.pca?.x || 0),
-        y: clusterPoints.map(d => d.pca?.y || 0),
-        z: clusterPoints.map(d => d.pca?.z || ((d as any).size || 0)),
-        mode: 'markers' as const,
-        type: 'scatter3d' as const,
-        name: `Cluster ${clusterId} (${clusterPoints.length})`,
-        marker: {
-          color: colors[index % colors.length],
-          size: 8,
-          opacity: showCluster ? 0.7 : 0.1,
-        },
-        text: clusterPoints.map(d => 
-          `ID: ${d.id}<br>Cluster: ${d.cluster}<br>X: ${d.pca?.x.toFixed(2)}<br>Y: ${d.pca?.y.toFixed(2)}<br>Z: ${(d.pca?.z || ((d as any).size || 0)).toFixed(2)}`
-        ),
-        hovertemplate: '%{text}<extra></extra>',
-        visible: showCluster,
-      };
+      clusterPoints.forEach((point, pointIndex) => {
+        const x = point.pca?.x || 0;
+        const y = point.pca?.y || 0;
+        const height = Math.max(0.1, (point.pca?.z || ((point as any).size || 0)) * 2);
+        const columnWidth = 0.01; // 1px equivalent for compact visualization
+        const w = columnWidth / 2;
+        
+        // Create detailed hover text with all company information
+        const enterpriseName = point.info?.name || 'N/A';
+        const sectorId = point.info?.sector_unique_id || 'N/A';
+        const sectorName = point.info?.sector || 'N/A';
+        const taxCode = point.info?.taxcode || 'N/A';
+        const employees = point.info?.employees || 0;
+        const size = point.pca?.z || 0;
+        
+        let hoverText = `<b>${enterpriseName}</b><br>`;
+        hoverText += `Tọa độ: (${x.toFixed(3)}, ${y.toFixed(3)})<br>`;
+        hoverText += `Kích thước quy mô: ${size.toFixed(2)}<br>`;
+        hoverText += `Mã số thuế: ${taxCode}<br>`;
+        hoverText += `Tên ngành: ${sectorName}<br>`;
+        hoverText += `Sector ID: ${sectorId}<br>`;
+        hoverText += `Số nhân viên: ${employees.toLocaleString()}`;
+        
+        // 8 vertices of rectangular column
+        const vertices = [
+          [x-w, y-w, 0],      // 0: bottom-left-back
+          [x+w, y-w, 0],      // 1: bottom-right-back  
+          [x+w, y+w, 0],      // 2: bottom-right-front
+          [x-w, y+w, 0],      // 3: bottom-left-front
+          [x-w, y-w, height], // 4: top-left-back
+          [x+w, y-w, height], // 5: top-right-back
+          [x+w, y+w, height], // 6: top-right-front
+          [x-w, y+w, height]  // 7: top-left-front
+        ];
+        
+        // 12 triangular faces
+        const faces = [
+          [0,1,2], [0,2,3], // Bottom
+          [4,6,5], [4,7,6], // Top  
+          [3,2,6], [3,6,7], // Front
+          [0,4,5], [0,5,1], // Back
+          [0,3,7], [0,7,4], // Left
+          [1,5,6], [1,6,2]  // Right
+        ];
+        
+        traces.push({
+          type: 'mesh3d',
+          x: vertices.map(v => v[0]),
+          y: vertices.map(v => v[1]), 
+          z: vertices.map(v => v[2]),
+          i: faces.map(f => f[0]),
+          j: faces.map(f => f[1]),
+          k: faces.map(f => f[2]),
+          color: clusterColor,
+          opacity: showCluster ? 0.9 : 0.1,
+          showlegend: pointIndex === 0,
+          name: pointIndex === 0 ? `Cluster ${clusterId} (${clusterPoints.length})` : undefined,
+          text: hoverText,
+          hoverinfo: 'text',
+          visible: showCluster,
+          lighting: {
+            ambient: 0.6,
+            diffuse: 0.9,
+            specular: 0.3,
+            roughness: 0.1
+          }
+        });
+      });
     });
 
     const layout = {
@@ -192,7 +273,7 @@ export default function ScatterPlot() {
       },
       plot_bgcolor: 'white',
       paper_bgcolor: 'white',
-      margin: { l: 80, r: 200, t: 50, b: 80 },
+      margin: { l: 0, r: 0, t: 50, b: 0 },
       showlegend: true,
       legend: {
         x: 1.02,
@@ -206,6 +287,9 @@ export default function ScatterPlot() {
         itemsizing: 'constant',
         itemwidth: 30,
       },
+      autosize: true,
+      width: undefined,
+      height: undefined
     };
 
     const config = {

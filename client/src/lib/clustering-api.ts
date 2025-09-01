@@ -120,8 +120,6 @@ class ClusteringApi {
   }
 
   async runClustering(config: ApiConfig, params: ClusteringParams, infoFileBase64?: string): Promise<ClusterResult> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     try {
       const requestBody = {
@@ -155,7 +153,6 @@ class ClusteringApi {
           'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify(requestBody),
-        signal: controller.signal,
       });
 
       console.log("📡 API Response Status:", response.status);
@@ -167,19 +164,27 @@ class ClusteringApi {
         throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
 
-      const result = await response.json();
-      console.log("✅ API Response Data:");
-      console.log("📊 Full Backend Response:");
-      console.log(JSON.stringify(result, null, 2));
-
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
+      // Get response text first to handle NaN values
+      const responseText = await response.text();
+      console.log("📥 Raw API Response Text (first 500 chars):", responseText.substring(0, 500));
       
+      // Replace NaN values with null to make valid JSON
+      const sanitizedText = responseText.replace(/:\s*NaN\s*([,}])/g, ': null$1');
+      
+      try {
+        const result = JSON.parse(sanitizedText);
+        console.log("✅ API Response Data:");
+        console.log("📊 Full Backend Response:");
+        console.log(JSON.stringify(result, null, 2));
+        
+        return result;
+      } catch (parseError) {
+        console.error("❌ JSON Parse Error:", parseError);
+        console.error("🔍 Problematic text:", sanitizedText.substring(0, 1000));
+        throw new Error(`Invalid JSON response from API: ${parseError}`);
+      }
+    } catch (error) {
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error(`Timeout: API clustering không phản hồi sau 30 giây`);
-        }
         if (error.message.includes('fetch') || error.message.includes('NetworkError') || error.message.includes('TypeError')) {
           throw new Error(`Không thể kết nối đến API clustering: ${config.endpoint}/cluster/run`);
         }
