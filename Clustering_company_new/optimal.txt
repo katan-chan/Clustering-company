@@ -1,0 +1,29 @@
+
+Hãy viết code trong dự án clustering-company-new để:
+1. Đọc dữ liệu JSON có dạng:
+
+{
+  "results": [
+    { "k": 2, "silhouette_score": ..., "dbi_score": ..., "chi_score": ... },
+    { "k": 3, "silhouette_score": ..., "dbi_score": ..., "chi_score": ... },
+    { "k": 4, "silhouette_score": ..., "dbi_score": ..., "chi_score": ... },
+    { "k": 5, "silhouette_score": ..., "dbi_score": ..., "chi_score": ... },
+    ...
+  ],
+  "k_best": 3
+}
+
+
+2. Vẽ 3 biểu đồ đường (line chart) chung trong cùng một khung (trục X là k, trục Y là giá trị chỉ số), gồm:
+
+- Silhouette Score
+
+- Davies–Bouldin Index (DBI)
+
+- Calinski–Harabasz Index (CHI)
+
+3. Highlight điểm k_best trên biểu đồ bằng màu sắc đặc biệt (ví dụ chấm tròn đỏ to hơn).
+
+4. Khi di chuột vào bất kỳ điểm nào (k), hiển thị tooltip chứa giá trị của cả 3 chỉ số tại k đó.
+
+5. Dùng thư viện recharts để vẽ (nếu có thể, hãy dùng thêm màu sắc khác nhau cho 3 đường).
