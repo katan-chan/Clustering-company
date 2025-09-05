@@ -195,8 +195,49 @@ export const useClusteringStore = create<ClusteringState>()(
           // Process cluster result data
           let finalDataPoints: DataPoint[] = [];
           
-          // Handle new API response format with companies array
-          if (clusterResult.companies && Array.isArray(clusterResult.companies)) {
+          // Handle new API response format with companies object (key = taxcode)
+          if (clusterResult.companies && typeof clusterResult.companies === 'object') {
+            console.log("🔧 Processing companies object format");
+            const companyEntries = Object.entries(clusterResult.companies);
+            console.log("🏢 Number of companies:", companyEntries.length);
+            
+            let pointIndex = 0;
+            companyEntries.forEach(([taxcode, companyData]: [string, any]) => {
+              const clusterLabel = companyData.label || 0;
+              const pcaX = companyData.pca_V?.[0] || 0;
+              const pcaY = companyData.pca_V?.[1] || 0;
+              const size = companyData.size || 1;
+              
+              // Extract company information from the new structure
+              const companyInfo = {
+                name: companyData.industryName || 'Unknown Company',
+                taxcode: taxcode,
+                sector_name: companyData.industryName || '',
+                sector_unique_id: companyData.sector_unique_id || '',
+                empl_qtty: parseFloat(companyData.empl_qtty) || 0,
+                yearreport: parseInt(companyData.yearreport) || 2024,
+                industryCode: companyData.industryCode || '',
+                industryPath: companyData.industryPath || ''
+              };
+              
+              finalDataPoints.push({
+                id: pointIndex.toString(),
+                info: companyInfo,
+                embedding: [], // Not provided in this format
+                pca: {
+                  x: pcaX,
+                  y: pcaY
+                },
+                cluster: clusterLabel,
+                size: size,
+              });
+              
+              pointIndex++;
+            });
+            
+            console.log("✅ Created", finalDataPoints.length, "data points from companies object");
+            console.log("📋 Sample data point:", finalDataPoints[0]);
+          } else if (clusterResult.companies && Array.isArray(clusterResult.companies)) {
             console.log("🔧 Processing new API response format with companies array");
             console.log("🏢 Number of companies:", clusterResult.companies.length);
             

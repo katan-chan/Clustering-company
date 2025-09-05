@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useClusteringStore } from "../lib/clustering-store";
 import ClusteringForm from "@/components/clustering-form";
 import ScatterPlot from "@/components/scatter-plot";
+import TestRealData from "@/components/test-real-data";
 import OptimalKChart from "@/components/optimal-k-chart";
 import { CorrelationAnalysis } from "@/components/correlation-analysis";
 import { Button } from "@/components/ui/button";
@@ -135,12 +136,16 @@ export default function ClusteringPage() {
             <div className="bg-card border-b border-border px-4 lg:px-6 py-2">
               <TabsList>
                 <TabsTrigger value="cluster-visualization">Cluster Visualization</TabsTrigger>
+                <TabsTrigger value="test-data">Test Real Data</TabsTrigger>
                 <TabsTrigger value="optimal-k">Optimal K-Value</TabsTrigger>
                 <TabsTrigger value="correlation-analysis">Correlation Analysis</TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="cluster-visualization" className="flex-1 p-4 lg:p-6">
               <ScatterPlot />
+            </TabsContent>
+            <TabsContent value="test-data" className="flex-1 p-4 lg:p-6">
+              <TestRealData />
             </TabsContent>
             <TabsContent value="optimal-k" className="flex-1 p-4 lg:p-6">
               <OptimalKChart />

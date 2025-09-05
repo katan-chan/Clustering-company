@@ -75,7 +75,41 @@ export default function ScatterPlot(): JSX.Element {
     const out: ScatterDataPoint[] = [];
     if (!results) return out;
 
-    if (results?.clusterResult?.companies && Array.isArray(results.clusterResult.companies)) {
+    console.log("🔍 ScatterPlot: Processing results", results);
+
+    // Handle companies object format (key = taxcode)
+    if (results?.clusterResult?.companies && typeof results.clusterResult.companies === 'object' && !Array.isArray(results.clusterResult.companies)) {
+      console.log("✅ ScatterPlot: Found companies object, processing...");
+      const companyEntries = Object.entries(results.clusterResult.companies);
+      console.log("🏢 Companies count:", companyEntries.length);
+      
+      companyEntries.forEach(([taxcode, companyData]: [string, any], index) => {
+        const clusterLabel = companyData.label || 0;
+        const pcaX = companyData.pca_V?.[0] || 0;
+        const pcaY = companyData.pca_V?.[1] || 0;
+        const size = companyData.size || 1;
+        
+        out.push({
+          id: `company-${index}`,
+          info: {
+            name: companyData.industryName || "Unknown Company",
+            taxcode: taxcode,
+            sector: companyData.industryName || "",
+            sector_unique_id: companyData.sector_unique_id || "",
+            employees: parseFloat(companyData.empl_qtty) || 0
+          },
+          embedding: [], // Not provided in this format
+          pca: {
+            x: pcaX,
+            y: pcaY,
+            z: size
+          },
+          cluster: Number(clusterLabel)
+        });
+      });
+      
+      console.log("✅ ScatterPlot: Created", out.length, "data points from companies object");
+    } else if (results?.clusterResult?.companies && Array.isArray(results.clusterResult.companies)) {
       let pointIndex = 0;
       results.clusterResult.companies.forEach((company: any) => {
         if (company.enterprise && Array.isArray(company.enterprise)) {

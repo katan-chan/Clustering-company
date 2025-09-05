@@ -7,60 +7,56 @@ interface ClusteringRequest {
 
 class ClusteringApi {
   async getMeta(config: ApiConfig) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    try {
-      console.error(`[DEBUG] Calling API: ${config.endpoint}/meta`);
-      console.error(`[DEBUG] Full URL: ${config.endpoint}/meta`);
-      
-      const response = await fetch(`${config.endpoint}/meta`, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        signal: controller.signal,
-      });
+  try {
+    const url = `${config.endpoint}meta`; // thêm /meta cho chuẩn endpoint
+    console.error(`[DEBUG] Calling API: ${url}`);
+    console.log(">>>Response received:1111111111");
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      headers: {
+        'Accept': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      signal: controller.signal,
+    });
+    console.log(">>>Response received:", response);
+    clearTimeout(timeoutId);
 
-      clearTimeout(timeoutId);
-      
-      console.error(`[DEBUG] Response status: ${response.status}`);
-      console.error(`[DEBUG] Response URL: ${response.url}`);
-      console.error(`[DEBUG] Response redirected: ${response.redirected}`);
-      
-      // Check what we actually received
-      const responseText = await response.text();
-      console.error(`[DEBUG] Response body:`, responseText);
-      console.error(`[DEBUG] Content-Type:`, response.headers.get('content-type'));
+    console.error(`[DEBUG] Response status: ${response.status}`);
 
-      if (!response.ok) {
-        throw new Error(`API Error ${response.status}: ${response.statusText}`);
-      }
-
-      // Check if response is actually JSON
-      if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
-        throw new Error(`Server trả về HTML thay vì JSON. Có thể bị redirect hoặc proxy issue.`);
-      }
-
-      console.error(`[DEBUG] API connection successful - received JSON`);
-      return { status: 'ok' };
-      
-    } catch (error) {
-      clearTimeout(timeoutId);
-      
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error(`Timeout: API không phản hồi sau 10 giây. Kiểm tra ${config.endpoint}`);
-        }
-        if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
-          throw new Error(`Không thể kết nối đến API: ${config.endpoint}. Kiểm tra endpoint URL và kết nối mạng.`);
-        }
-      }
-      throw error;
+    
+    if (!response.ok) {
+      throw new Error(`API Error ${response.status}: ${response.statusText}`);
     }
+
+    // Parse JSON trực tiếp
+    const data = await response.json();
+    console.error(`[DEBUG] Parsed JSON:`, data);
+
+    return data; // không fix cứng {status:'ok'} nữa
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error(`Timeout: API không phản hồi sau 10 giây. Kiểm tra ${config.endpoint}`);
+      }
+      if (
+        error.message.includes('fetch') ||
+        error.message.includes('NetworkError') ||
+        error.message.includes('TypeError')
+      ) {
+        throw new Error(`Không thể kết nối đến API: ${config.endpoint}meta`);
+      }
+    }
+    throw error;
   }
+}
+
 
   async runPrepare(files: { embeddings: File; info: File }, config: ApiConfig): Promise<any> {
     const controller = new AbortController();
