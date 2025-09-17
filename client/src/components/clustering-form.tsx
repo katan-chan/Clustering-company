@@ -1,7 +1,10 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useClusteringStore } from "@/lib/clustering-store";
-import { clusteringParamsSchema, apiConfigSchema } from "../../../shared/schema";
+import {
+  clusteringParamsSchema,
+  apiConfigSchema,
+} from "../../../shared/schema";
 import { z } from "zod";
 import { useState } from "react";
 import Papa from "papaparse";
@@ -11,7 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { Wifi, WifiOff, Download } from "lucide-react";
 import IndustrySelector from "@/components/industry-selector";
@@ -29,9 +39,18 @@ const apiSchema = z.object({
 });
 
 export default function ClusteringForm() {
-  const { parameters, apiConfig, updateParameters, updateApiConfig, infoFile: storeInfoFile, results } = useClusteringStore();
+  const {
+    parameters,
+    apiConfig,
+    updateParameters,
+    updateApiConfig,
+    infoFile: storeInfoFile,
+    results,
+  } = useClusteringStore();
   const { toast } = useToast();
-  const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("disconnected");
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "disconnected" | "checking"
+  >("disconnected");
   const [infoFile, setInfoFile] = useState<File | null>(null);
   const [showOnlyAvailable, setShowOnlyAvailable] = useState(false);
   const [availableIndustries, setAvailableIndustries] = useState<string[]>([]);
@@ -49,7 +68,7 @@ export default function ClusteringForm() {
   const apiForm = useForm<z.infer<typeof apiSchema>>({
     resolver: zodResolver(apiSchema),
     defaultValues: {
-      endpoint: apiConfig.endpoint || "https://678f16a9e31c.ngrok-free.app/",
+      endpoint: apiConfig.endpoint || "",
     },
   });
 
@@ -83,7 +102,7 @@ export default function ClusteringForm() {
     updateApiConfig({
       endpoint: data.endpoint,
     });
-    
+
     // Real connection check using /meta endpoint
     if (data.endpoint) {
       setConnectionStatus("checking");
@@ -93,7 +112,8 @@ export default function ClusteringForm() {
         setConnectionStatus("connected");
       } catch (error) {
         console.error("Connection failed:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown connection error";
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown connection error";
         toast({
           title: "Connection Failed",
           description: errorMessage,
@@ -109,54 +129,67 @@ export default function ClusteringForm() {
   const parseIndustriesFromCSV = async (file: File): Promise<string[]> => {
     try {
       const text = await file.text();
-      const lines = text.split('\n');
+      const lines = text.split("\n");
       const industries = new Set<string>();
-      
+
       if (lines.length === 0) return [];
-      
+
       // Parse header to find sector_unique_id column
       const headerLine = lines[0].trim();
-      const headers = headerLine.split(',').map(col => col.trim().replace(/"/g, ''));
-      const sectorColumnIndex = headers.findIndex(header => 
-        header.toLowerCase().includes('sector_unique_id') || 
-        header.toLowerCase().includes('sector') ||
-        header.toLowerCase().includes('industry_code') ||
-        header.toLowerCase().includes('industrycode')
+      const headers = headerLine
+        .split(",")
+        .map((col) => col.trim().replace(/"/g, ""));
+      const sectorColumnIndex = headers.findIndex(
+        (header) =>
+          header.toLowerCase().includes("sector_unique_id") ||
+          header.toLowerCase().includes("sector") ||
+          header.toLowerCase().includes("industry_code") ||
+          header.toLowerCase().includes("industrycode"),
       );
-      
+
       console.log("📋 CSV Headers:", headers);
-      console.log("🎯 Found sector column at index:", sectorColumnIndex, headers[sectorColumnIndex]);
-      
+      console.log(
+        "🎯 Found sector column at index:",
+        sectorColumnIndex,
+        headers[sectorColumnIndex],
+      );
+
       // If sector_unique_id column found, use it specifically
       if (sectorColumnIndex !== -1) {
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
-          
-          const columns = line.split(',').map(col => col.trim().replace(/"/g, ''));
+
+          const columns = line
+            .split(",")
+            .map((col) => col.trim().replace(/"/g, ""));
           const sectorValue = columns[sectorColumnIndex];
-          
-          if (sectorValue && sectorValue !== '') {
+
+          if (sectorValue && sectorValue !== "") {
             industries.add(sectorValue);
           }
         }
       } else {
         // Fallback: look for industry code patterns in all columns
-        console.log("⚠️ sector_unique_id column not found, using pattern matching fallback");
+        console.log(
+          "⚠️ sector_unique_id column not found, using pattern matching fallback",
+        );
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
-          
-          const columns = line.split(',').map(col => col.trim().replace(/"/g, ''));
-          
-          columns.forEach(col => {
+
+          const columns = line
+            .split(",")
+            .map((col) => col.trim().replace(/"/g, ""));
+
+          columns.forEach((col) => {
             if (/^[A-Z]?\d{2,4}$/.test(col) || /^[A-Z]$/.test(col)) {
               industries.add(col);
             }
           });
         }
       }
-      
+
       return Array.from(industries);
     } catch (error) {
       console.error("❌ Failed to parse industries from CSV:", error);
@@ -164,14 +197,17 @@ export default function ClusteringForm() {
     }
   };
 
-  const handleInfoFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInfoFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     console.log("📁 File selected:", file?.name, file?.type, file?.size);
 
-    if (file && (file.type === 'text/csv' || file.name.endsWith('.csv'))) {
+    if (file && (file.type === "text/csv" || file.name.endsWith(".csv"))) {
       setInfoFile(file);
 
-      const { setInfoFile: setStoreInfoFile, setUploadedData } = useClusteringStore.getState();
+      const { setInfoFile: setStoreInfoFile, setUploadedData } =
+        useClusteringStore.getState();
       setStoreInfoFile(file);
 
       // Parse the CSV to get industry codes
@@ -199,9 +235,8 @@ export default function ClusteringForm() {
             description: "Could not parse the uploaded file.",
             variant: "destructive",
           });
-        }
+        },
       });
-
     } else {
       setInfoFile(null);
       setAvailableIndustries([]);
@@ -215,17 +250,19 @@ export default function ClusteringForm() {
       pca_dim: data.pca_dim,
       lambda: data.lambda,
       k: data.k,
-      level_value: data.level_value
+      level_value: data.level_value,
     };
-    
-    const blob = new Blob([JSON.stringify(inputJson, null, 2)], { type: 'application/json' });
+
+    const blob = new Blob([JSON.stringify(inputJson, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'clustering-input.json';
+    a.download = "clustering-input.json";
     a.click();
     URL.revokeObjectURL(url);
-    
+
     toast({
       title: "Input JSON Downloaded",
       description: "Clustering input parameters have been downloaded as JSON",
@@ -242,7 +279,7 @@ export default function ClusteringForm() {
       });
       return;
     }
-    
+
     // Handle new API response format with companies array
     const outputJson = {
       best_k: results.clusterResult.best_k,
@@ -255,17 +292,19 @@ export default function ClusteringForm() {
       level_value: results.clusterResult.level_value,
       mode: results.clusterResult.mode || "subset",
       n_samples: results.clusterResult.n_samples,
-      size: results.clusterResult.size
+      size: results.clusterResult.size,
     };
-    
-    const blob = new Blob([JSON.stringify(outputJson, null, 2)], { type: 'application/json' });
+
+    const blob = new Blob([JSON.stringify(outputJson, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'clustering-output.json';
+    a.download = "clustering-output.json";
     a.click();
     URL.revokeObjectURL(url);
-    
+
     toast({
       title: "Output JSON Downloaded",
       description: "Clustering results have been downloaded as JSON",
@@ -277,10 +316,15 @@ export default function ClusteringForm() {
     <div className="space-y-6">
       {/* Algorithm Parameters */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-foreground">Algorithm Parameters</h3>
-        
+        <h3 className="text-lg font-medium text-foreground">
+          Algorithm Parameters
+        </h3>
+
         <Form {...parametersForm}>
-          <form onSubmit={parametersForm.handleSubmit(onParametersSubmit)} className="space-y-4">
+          <form
+            onSubmit={parametersForm.handleSubmit(onParametersSubmit)}
+            className="space-y-4"
+          >
             <FormField
               control={parametersForm.control}
               name="lambda"
@@ -291,11 +335,11 @@ export default function ClusteringForm() {
                     <Input
                       type="number"
                       step="any"
-                      min="0"
-                      max="100"
                       placeholder="0.5"
                       {...field}
-                      onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                      onChange={(e) =>
+                        field.onChange(parseFloat(e.target.value))
+                      }
                       data-testid="input-lambda"
                     />
                   </FormControl>
@@ -322,7 +366,7 @@ export default function ClusteringForm() {
                         onChange={(e) => {
                           const value = e.target.value;
                           // Try to parse as an array, otherwise as a number
-                          if (value.startsWith('[') && value.endsWith(']')) {
+                          if (value.startsWith("[") && value.endsWith("]")) {
                             try {
                               const parsed = JSON.parse(value);
                               if (Array.isArray(parsed)) {
@@ -337,7 +381,11 @@ export default function ClusteringForm() {
                           const num = parseInt(value, 10);
                           field.onChange(isNaN(num) ? value : num);
                         }}
-                        value={Array.isArray(field.value) ? JSON.stringify(field.value) : (field.value ?? '')}
+                        value={
+                          Array.isArray(field.value)
+                            ? JSON.stringify(field.value)
+                            : (field.value ?? "")
+                        }
                         className="flex-1"
                         data-testid="input-k"
                       />
@@ -393,7 +441,13 @@ export default function ClusteringForm() {
                   <FormLabel>Mã ngành</FormLabel>
                   <FormControl>
                     <IndustrySelector
-                      value={Array.isArray(field.value) ? field.value : (field.value ? [field.value] : [])}
+                      value={
+                        Array.isArray(field.value)
+                          ? field.value
+                          : field.value
+                            ? [field.value]
+                            : []
+                      }
                       onValueChange={field.onChange}
                       placeholder="Chọn mã ngành..."
                       data-testid="select-level-value"
@@ -425,12 +479,16 @@ export default function ClusteringForm() {
             </div>
 
             <div className="flex gap-2">
-              <Button type="submit" className="flex-1" data-testid="button-update-parameters">
+              <Button
+                type="submit"
+                className="flex-1"
+                data-testid="button-update-parameters"
+              >
                 Update Parameters
               </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => downloadInputJson(parametersForm.getValues())}
                 className="flex items-center gap-2"
                 data-testid="button-download-input"
@@ -447,20 +505,25 @@ export default function ClusteringForm() {
 
       {/* API Configuration */}
       <div className="space-y-4">
-        <h3 className="text-lg font-medium text-foreground">API Configuration</h3>
-        
+        <h3 className="text-lg font-medium text-foreground">
+          Clustering API Configuration
+        </h3>
+
         <Form {...apiForm}>
-          <form onSubmit={apiForm.handleSubmit(onApiConfigSubmit)} className="space-y-4">
+          <form
+            onSubmit={apiForm.handleSubmit(onApiConfigSubmit)}
+            className="space-y-4"
+          >
             <FormField
               control={apiForm.control}
               name="endpoint"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Endpoint URL</FormLabel>
+                  <FormLabel>Clustering Service URL</FormLabel>
                   <FormControl>
                     <Input
                       type="url"
-                      placeholder="https://api.clustering-service.com"
+                      placeholder="https://clustering-api.example.com"
                       {...field}
                       onBlur={field.onBlur}
                       data-testid="input-endpoint"
@@ -482,7 +545,9 @@ export default function ClusteringForm() {
               ) : connectionStatus === "checking" ? (
                 <>
                   <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
-                  <span className="text-sm text-yellow-600">Checking connection...</span>
+                  <span className="text-sm text-yellow-600">
+                    Checking connection...
+                  </span>
                 </>
               ) : (
                 <>
@@ -492,14 +557,18 @@ export default function ClusteringForm() {
                 </>
               )}
             </div>
-            
+
             <div className="flex gap-2">
-              <Button type="submit" className="flex-1" data-testid="button-update-config">
+              <Button
+                type="submit"
+                className="flex-1"
+                data-testid="button-update-config"
+              >
                 Update Configuration
               </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
+              <Button
+                type="button"
+                variant="outline"
                 onClick={downloadOutputJson}
                 className="flex items-center gap-2"
                 data-testid="button-download-output"

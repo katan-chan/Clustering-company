@@ -11,7 +11,9 @@ class ClusteringApi {
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
   try {
-    const url = `${config.endpoint}meta`; // thêm /meta cho chuẩn endpoint
+    // Fix double slash issue
+    const baseUrl = config.endpoint.endsWith('/') ? config.endpoint.slice(0, -1) : config.endpoint;
+    const url = `${baseUrl}/meta`;
     console.error(`[DEBUG] Calling API: ${url}`);
     console.log(">>>Response received:1111111111");
     const response = await fetch(url, {
@@ -19,7 +21,11 @@ class ClusteringApi {
       mode: 'cors',
       headers: {
         'Accept': 'application/json',
+        'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, ngrok-skip-browser-warning',
       },
       signal: controller.signal,
     });
@@ -67,18 +73,26 @@ class ClusteringApi {
       formData.append('embeddings', files.embeddings);
       formData.append('info', files.info);
 
+      // Fix double slash issue
+      const baseUrl = config.endpoint.endsWith('/') ? config.endpoint.slice(0, -1) : config.endpoint;
+      const url = `${baseUrl}/prepare/run`;
+      
       console.log(`🔄 Calling /prepare/run API:`, {
-        url: `${config.endpoint}/prepare/run`,
+        url: url,
         files: {
           embeddings: files.embeddings.name,
           info: files.info.name
         }
       });
 
-      const response = await fetch(`${config.endpoint}/prepare/run`, {
+      const response = await fetch(url, {
         method: 'POST',
+        mode: 'cors',
         headers: {
           'ngrok-skip-browser-warning': 'true',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, ngrok-skip-browser-warning',
         },
         body: formData,
         signal: controller.signal,
@@ -135,18 +149,25 @@ class ClusteringApi {
       }
 
       // Log the JSON payload being sent to API
+      // Fix double slash issue
+      const baseUrl = config.endpoint.endsWith('/') ? config.endpoint.slice(0, -1) : config.endpoint;
+      const url = `${baseUrl}/cluster/run`;
+      
       console.log("🚀 API Request Payload:");
       console.log("📋 JSON being sent to /cluster/run:");
       console.log(JSON.stringify(requestBody, null, 2));
-      console.log("🌐 Endpoint:", `${config.endpoint}/cluster/run`);
+      console.log("🌐 Endpoint:", url);
 
-      const response = await fetch(`${config.endpoint}/cluster/run`, {
+      const response = await fetch(url, {
         method: 'POST',
         mode: 'cors',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'ngrok-skip-browser-warning': 'true',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, ngrok-skip-browser-warning',
         },
         body: JSON.stringify(requestBody),
       });

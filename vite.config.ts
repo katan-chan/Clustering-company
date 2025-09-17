@@ -32,13 +32,16 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: "0.0.0.0",
     hmr: true,
     watch: {
       usePolling: true,
     },
     fs: {
-      strict: true,
-      deny: ["**/.*"],
+      strict: false,
+      allow: ["*"],
+      deny: [],
     },
+    allowedHosts: true, // Bỏ chặn toàn bộ host
   },
 });

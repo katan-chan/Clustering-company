@@ -64,8 +64,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { lambda, k_list } = req.body;
 
       // Validate request
-      if (typeof lambda !== 'number' || lambda <= 0) {
-        return res.status(400).json({ error: "lambda must be a positive number" });
+      if (typeof lambda !== 'number') {
+        return res.status(400).json({ error: "Lambda must be a number" });
       }
 
       if (!Array.isArray(k_list) || k_list.some(k => typeof k !== 'number' || k < 2)) {
@@ -135,6 +135,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("File download error:", error);
       res.status(500).json({ error: "Failed to download file" });
+    }
+  });
+
+  // Company Rating API endpoints
+  app.get("/api/indicator", async (req, res) => {
+    try {
+      // Mock indicators list - in real implementation this would come from database
+      const indicators = [
+        { 
+          id: "STD_RTD146", 
+          name: "Chỉ số tài chính 146", 
+          description: "Chỉ số đánh giá tài chính doanh nghiệp",
+          category: "financial"
+        },
+        { 
+          id: "STD_RTD1", 
+          name: "Chỉ số hoạt động 1", 
+          description: "Chỉ số đánh giá hiệu quả hoạt động",
+          category: "operational"
+        },
+        { 
+          id: "STD_RTD71", 
+          name: "Chỉ số rủi ro 71", 
+          description: "Chỉ số đánh giá mức độ rủi ro",
+          category: "risk"
+        },
+        { 
+          id: "STD_RTD64", 
+          name: "Chỉ số thanh khoản 64", 
+          description: "Chỉ số đánh giá khả năng thanh khoản",
+          category: "liquidity"
+        }
+      ];
+      
+      res.json(indicators);
+    } catch (error) {
+      console.error("Failed to get indicators:", error);
+      res.status(500).json({ error: "Failed to retrieve indicators" });
+    }
+  });
+
+  app.post("/api/tiers/cluster", async (req, res) => {
+    try {
+      const { sector, group_label, indicator } = req.body;
+
+      // Validate request
+      if (!sector || group_label === undefined || !indicator) {
+        return res.status(400).json({ 
+          error: "Missing required parameters: sector, group_label, and indicator" 
+        });
+      }
+
+      // Mock tiers data - in real implementation this would come from clustering service
+      const tiersData = {
+        group_label: group_label,
+        indicator: indicator,
+        method: { 
+          label: "kmeans", 
+          mode: Math.random() > 0.5 ? "high_good" : "low_good" 
+        },
+        sector: sector,
+        tiers: [
+          { tier: "T1", range: [84.8, "inf"], count: Math.floor(Math.random() * 10) + 1 },
+          { tier: "T2", range: [70.5, 84.8], count: Math.floor(Math.random() * 20) + 5 },
+          { tier: "T3", range: [60.2, 70.5], count: Math.floor(Math.random() * 30) + 10 },
+          { tier: "T4", range: [50.8, 60.2], count: Math.floor(Math.random() * 25) + 8 },
+          { tier: "T5", range: [40.1, 50.8], count: Math.floor(Math.random() * 20) + 5 },
+          { tier: "T6", range: [30.5, 40.1], count: Math.floor(Math.random() * 15) + 3 },
+          { tier: "T7", range: [20.0, 30.5], count: Math.floor(Math.random() * 10) + 2 },
+          { tier: "T8", range: [0, 20.0], count: Math.floor(Math.random() * 5) + 1 }
+        ]
+      };
+      
+      res.json(tiersData);
+    } catch (error) {
+      console.error("Failed to get tiers data:", error);
+      res.status(500).json({ error: "Failed to retrieve tiers data" });
     }
   });
 

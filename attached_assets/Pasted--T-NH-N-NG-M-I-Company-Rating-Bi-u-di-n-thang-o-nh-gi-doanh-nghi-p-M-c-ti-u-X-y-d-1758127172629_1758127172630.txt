@@ -1,0 +1,79 @@
+# 🧩 TÍNH NĂNG MỚI: Company Rating – Biểu diễn thang đo đánh giá doanh nghiệp
+
+**Mục tiêu:**  
+Xây dựng một tab mới hiển thị biểu đồ thang điểm (T1→T8) để đánh giá mức độ rủi ro của doanh nghiệp theo từng mã ngành và chỉ số. Có khả năng tương tác, lọc dữ liệu theo doanh nghiệp, và xuất CSV.
+
+---
+
+## 📌 Yêu cầu chức năng
+
+
+
+2. **Tab mới độc lập**
+   - Tính năng nằm trong một tab mới riêng biệt, không ảnh hưởng đến các mục “Visualize” cũ.
+
+3. **Biểu đồ thang đo (tiers)**
+   - Hiển thị 8 khoảng điểm (T1 → T8), với:
+     - `T1` là tốt nhất → `T8` là tệ nhất
+     - Dữ liệu thang điểm lấy từ API `tiers/cluster`
+   - Bộ màu trực quan, dễ nhìn, chuyển từ mát → nóng khi điểm giảm.
+   - Có tiêu đề, legend, trục, nhãn, chú thích rõ ràng.
+
+4. **Tương tác trên biểu đồ**
+   - Khi bấm vào 1 khoảng T_i:
+     - Hiển thị tên và mã ngành (sector)
+     - Số lượng doanh nghiệp thuộc khoảng đó
+
+5. **Hiển thị dữ liệu chi tiết**
+   - Bên dưới biểu đồ là danh sách các ngành, điểm và số doanh nghiệp thuộc từng thang
+   - Dữ liệu mẫu từ API:
+
+\`\`\`json
+Input:
+{
+  "sector": "A",
+  "group_label": 1,
+  "indicator": "STD_RTD146"
+}
+\`\`\`
+
+\`\`\`json
+Output:
+{
+  "group_label": 1,
+  "indicator": "STD_RTD146",
+  "method": { "label": "kmeans", "mode": "high_good" },
+  "sector": "A",
+  "tiers": [
+    { "tier": "T1", "range": [84.8,"inf"], "count": 1 },
+    { "tier": "T2", "range": [0.88,84.8], "count": 2 },
+    ...
+  ]
+}
+\`\`\`
+
+---
+
+## 🧭 Sidebar điều khiển
+
+- Lấy danh sách các chỉ số từ endpoint: `GET /indicator`.
+- Có 2 chế độ hiển thị:
+  1. **Không chọn doanh nghiệp** → hiện biểu đồ thang điểm như mô tả trên
+  2. **Chọn 1 danh sách doanh nghiệp** → hiển thị bảng: mã ngành, điểm của từng ngành, thang điểm của các doanh nghiệp đã chọn
+- Sidebar của tab này **tách biệt hoàn toàn** với sidebar của các tính năng visualize cũ.
+
+---
+
+## 📤 Xuất dữ liệu
+
+- Cho phép xuất dữ liệu hiện tại thành file `.csv`.
+
+---
+
+## 📌 Ghi chú logic
+
+- `indicator` là chỉ số để chia thang điểm
+- `group_label` là nhóm phân cụm trong từng ngành
+- `method.label = kmeans` → phương pháp phân cụm
+- `method.mode = high_good | low_good` → điểm cao tốt / điểm thấp tốt
+- `tier = T1..T8`, `range = [min, max]`, `count` = số doanh nghiệp

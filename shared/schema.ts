@@ -21,7 +21,7 @@ export const fileMetadataSchema = z.object({
 
 // Clustering parameters
 export const clusteringParamsSchema = z.object({
-  lambda: z.number().min(0).max(100),
+  lambda: z.number(),
   k: z.union([
     z.number().int().min(2).max(20),
     z.array(z.number().int().min(2).max(20))

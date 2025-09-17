@@ -1,0 +1,95 @@
+Các tính năng cho webapp Company rating
+
+
+1. Fix bug \lambda = 0 => not accept
+2. Biểu diễn thang đo
+
+- Biểu diễn chỉ số: Khoảng điểm. 8 khoảng T: T1 -> T8. T1 tốt giảm dần đến T8. Càng tệ màu càng nóng. Với mỗi khoảng T_i = [T_start, T_end]. 
+Giá trị các khoảng được nhận từ backend. 
+
+- Khi bấm vào một khoảng nào đó thì sẽ hiện tên và mã ngành và số lượng các doanh nghiệp đó thuộc vào
+- Endpoint: tiers/cluster
+- Api nhập bằng tay vào API configuration. Scoring URL. 
+Sample
+-Input: 		 	{
+    "sector" : "A",
+    "group_label": 1
+    , "indicator" : "STD_RTD146"
+}
+-Output:
+{
+    "group_label": 1,
+    "indicator": "STD_RTD146",
+    "method": {
+        "label": "kmeans",
+        "mode": "high_good"
+    },
+    "sector": "A",
+    "tiers": [
+        {
+            "count": 1,
+            "range": [
+                84.80723724715914,
+                "inf"
+            ],
+            "tier": "T1"
+        },
+        {
+            "count": 2,
+            "range": [
+                0.8830331064947234,
+                84.80723724715914
+            ],
+            "tier": "T2"
+        },
+        {
+            "count": 6,
+            "range": [
+                0.20036642538096922,
+                0.8830331064947234
+            ],
+            "tier": "T3"
+        },
+        {
+            "count": 54,
+            "range": [
+                -0.35081653587851147,
+                0.20036642538096922
+            ],
+            "tier": "T4"
+        },
+       
+        {
+            "count": 1,
+            "range": [
+		  “-inf”,
+                -19.213972099502858
+
+            ],
+            "tier": "T8"
+        }
+    ]
+}
+
+Output của tôi gồm 
+- sector ‘A’ là mã ngành A,
+-  indicator là chỉ số dùng để chia thang điểm để đánh giá mức độ rủi ro của doanh nghiệp, 
+- group_label là nhóm phân cụm trong ngành tương ứng.  
+- “Method” :”kmeans” là phương pháp phân cụm bằng kmeans, “high_good” là càng cao càng tốt “low_good” ngược lại (cho T1 -> T8). 
+- Tiers là 1 mảng các tier.
+- “tier”:”T1” là thang điểm 1
+-  count’ là số lượng doanh nghiệp nằm trong thang điểm đó
+-  “range” là khoảng của thang đó(gồm cận trên, cận dưới). 
+
+Yêu cầu:
+- Biểu đồ phải đầy đủ thông tin , gồm đủ title,legend, thông tin cần thiết
+- Sử dụng bộ màu dễ nhìn, nổi bật
+- Biểu đồ phải tương tác được theo như yêu cầu tôi đã đưa cho bạn đầu mục 2.
+- Tính năng này phải nằm trong 1 Tab riêng độc lập với các mục visualize trước đó
+- Thang đo sẽ hiện trong phần Canvas, bên dưới thang đo sẽ hiện thông tin về mã ngành, điểm của từng mã ngành trong thang đo và số lượng các Doanh nghiệp thuộc 1 khoảng khi bấm vào
+- Sidebar của tính năng có nhập các chỉ số để hiện biểu đồ thang đo. Danh sách các chỉ số lấy từ endpoint: GET /indicator.
+- Sidebar của chức năng này có thêm 1 mục để lựa chọn 1 list các doanh nghiệp
+	+ Nếu không lựa chọn doanh nghiệp nào, thì sẽ hiện thang đo như mô tả bên trên
+	+ Nếu lựa chọn 1 list các doanh nghiệp, thì hiện  thông tin về mã ngành, điểm của từng mã ngành trong thang đo của các Doanh nghiệp (biểu diễn bằng bảng)
+- Sidebar của tính năng này khác với Sidebar trứơc đó
+- Export csv 

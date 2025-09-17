@@ -136,12 +136,8 @@ export const useClusteringStore = create<ClusteringState>()(
           set({ progress: 20 });
           get().addLog({ type: "info", message: "Validating parameters..." });
           console.log(parameters);
-          if (!parameters.lambda || !parameters.k || !parameters.level_value) {
+          if (parameters.lambda == null || !parameters.k || !parameters.level_value) {
             throw new Error("Missing required parameters: lambda, k, and level_value");
-          }
-
-          if (parameters.lambda <= 0) {
-            throw new Error("Lambda must be greater than 0");
           }
 
           if (typeof parameters.k === 'number' && parameters.k < 2) {
@@ -173,7 +169,7 @@ export const useClusteringStore = create<ClusteringState>()(
             console.log("⚠️ No info file provided");
             console.log("🔍 Store state check:");
             console.log("📄 infoFile in store:", get().infoFile?.name || "none");
-            console.log("📄 infoFile parameter:", infoFile?.name || "none");
+            console.log("📄 infoFile parameter:", (infoFile as File | undefined)?.name || "none");
           }
 
           // Step 2: Call clustering API (50%)
@@ -239,10 +235,11 @@ export const useClusteringStore = create<ClusteringState>()(
             console.log("📋 Sample data point:", finalDataPoints[0]);
           } else if (clusterResult.companies && Array.isArray(clusterResult.companies)) {
             console.log("🔧 Processing new API response format with companies array");
-            console.log("🏢 Number of companies:", clusterResult.companies.length);
+            const companiesArray = clusterResult.companies as Company[];
+            console.log("🏢 Number of companies:", companiesArray.length);
             
             let pointIndex = 0;
-            clusterResult.companies.forEach((company: Company) => {
+            companiesArray.forEach((company: Company) => {
               if (company.enterprise && Array.isArray(company.enterprise)) {
                 company.enterprise.forEach((enterprise: Enterprise) => {
                   const clusterLabel = enterprise.cluster || enterprise.Label || 0;
