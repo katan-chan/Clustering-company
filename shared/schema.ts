@@ -27,7 +27,7 @@ export const clusteringParamsSchema = z.object({
     z.array(z.number().int().min(2).max(20))
   ]),
   pca_dim: z.number().int().min(2).max(512).default(128),
-  level_value: z.string().min(1),
+  level_value: z.union([z.string().min(1), z.array(z.string().min(1))]),
 });
 
 // API configuration
@@ -49,11 +49,34 @@ export const dataPointSchema = z.object({
   size: z.number().optional(),
 });
 
+export const enterpriseSchema = z.object({
+  Label: z.number().optional(),
+  cluster: z.number().optional(),
+  name: z.string().optional(),
+  taxcode: z.string().optional(),
+  sector_name: z.string().optional(),
+  sector_unique_id: z.union([z.string(), z.number()]).optional(),
+  empl_qtty: z.number().optional(),
+  yearreport: z.number().optional(),
+  embedding: z.array(z.number()).optional(),
+  pca2_x: z.number().optional(),
+  pca2_y: z.number().optional(),
+  s_DT_TTM: z.number().optional(),
+  s_EMPL: z.number().optional(),
+  s_TTS: z.number().optional(),
+  s_VCSH: z.number().optional(),
+}).passthrough(); // Allow additional fields
+
+export const companySchema = z.object({
+  sector_unique_id: z.union([z.string(), z.number()]).optional(),
+  enterprise: z.array(enterpriseSchema).optional(),
+});
+
 export const clusterResultSchema = z.object({
   dataset_id: z.string(),
   mode: z.string().optional(),
   level: z.number().optional(),
-  level_value: z.string().optional(),
+  level_value: z.union([z.string(), z.array(z.string())]).optional(),
   lambda: z.number(),
   k_candidates: z.array(z.number()),
   best_k: z.number(),
@@ -74,6 +97,15 @@ export const clusterResultSchema = z.object({
     tsne: z.string().optional(),
     umap: z.string().optional(),
   }).optional(),
+  // New field for companies array
+  companies: z.array(companySchema).optional(),
+  // Field for optimal k-value evaluation metrics
+  evaluation_metrics: z.array(z.object({
+    k: z.number(),
+    silhouette_score: z.number(),
+    dbi_score: z.number(),
+    chi_score: z.number(),
+  })).optional(),
 });
 
 export const clusterMetricsSchema = z.object({
@@ -96,6 +128,8 @@ export type FileMetadata = z.infer<typeof fileMetadataSchema>;
 export type ClusteringParams = z.infer<typeof clusteringParamsSchema>;
 export type ApiConfig = z.infer<typeof apiConfigSchema>;
 export type DataPoint = z.infer<typeof dataPointSchema>;
+export type Enterprise = z.infer<typeof enterpriseSchema>;
+export type Company = z.infer<typeof companySchema>;
 export type ClusterResult = z.infer<typeof clusterResultSchema>;
 export type ClusterMetrics = z.infer<typeof clusterMetricsSchema>;
 

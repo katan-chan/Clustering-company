@@ -4,6 +4,7 @@ import { useClusteringStore } from "@/lib/clustering-store";
 import { clusteringParamsSchema, apiConfigSchema } from "../../../shared/schema";
 import { z } from "zod";
 import { useState } from "react";
+import Papa from "papaparse";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,13 +13,13 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff, Download } from "lucide-react";
 import IndustrySelector from "@/components/industry-selector";
 import { Checkbox } from "@/components/ui/checkbox";
 
 const parametersSchema = z.object({
   lambda: clusteringParamsSchema.shape.lambda,
-  k: z.number().int().min(2).max(20),
+  k: clusteringParamsSchema.shape.k,
   pca_dim: clusteringParamsSchema.shape.pca_dim,
   level_value: clusteringParamsSchema.shape.level_value,
 });
@@ -28,7 +29,7 @@ const apiSchema = z.object({
 });
 
 export default function ClusteringForm() {
-  const { parameters, apiConfig, updateParameters, updateApiConfig, infoFile: storeInfoFile } = useClusteringStore();
+  const { parameters, apiConfig, updateParameters, updateApiConfig, infoFile: storeInfoFile, results } = useClusteringStore();
   const { toast } = useToast();
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("disconnected");
   const [infoFile, setInfoFile] = useState<File | null>(null);
@@ -39,7 +40,7 @@ export default function ClusteringForm() {
     resolver: zodResolver(parametersSchema),
     defaultValues: {
       lambda: parameters.lambda,
-      k: Array.isArray(parameters.k) ? parameters.k[0] : parameters.k,
+      k: parameters.k,
       pca_dim: parameters.pca_dim,
       level_value: parameters.level_value,
     },
@@ -48,11 +49,11 @@ export default function ClusteringForm() {
   const apiForm = useForm<z.infer<typeof apiSchema>>({
     resolver: zodResolver(apiSchema),
     defaultValues: {
-      endpoint: apiConfig.endpoint,
+      endpoint: apiConfig.endpoint || "https://678f16a9e31c.ngrok-free.app/",
     },
   });
 
-  const onParametersSubmit = (data: { lambda: number; k: number; pca_dim: number; level_value: string }) => {
+  const onParametersSubmit = (data: z.infer<typeof parametersSchema>) => {
     updateParameters({
       lambda: data.lambda,
       k: data.k,
@@ -166,31 +167,110 @@ export default function ClusteringForm() {
   const handleInfoFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     console.log("📁 File selected:", file?.name, file?.type, file?.size);
-    
+
     if (file && (file.type === 'text/csv' || file.name.endsWith('.csv'))) {
       setInfoFile(file);
-      
-      // Update the store with the file
-      const { setInfoFile: setStoreInfoFile } = useClusteringStore.getState();
+
+      const { setInfoFile: setStoreInfoFile, setUploadedData } = useClusteringStore.getState();
       setStoreInfoFile(file);
-      
-      // Parse available industries from the CSV
+
+      // Parse the CSV to get industry codes
       const industries = await parseIndustriesFromCSV(file);
       setAvailableIndustries(industries);
-      
-      console.log("✅ Info file uploaded to store:", file.name);
-      console.log("📊 Found industries in CSV:", industries.length, industries.slice(0, 10));
-      
-      toast({
-        title: "File Uploaded",
-        description: `${file.name} uploaded. Found ${industries.length} industry codes.`,
-        variant: "default",
+
+      // Parse the entire CSV file to JSON and store it
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: true,
+        complete: (results) => {
+          setUploadedData(results.data);
+          console.log("✅ CSV data parsed and stored in the global state.");
+          toast({
+            title: "File Processed",
+            description: `${file.name} has been parsed. Found ${results.data.length} records and ${industries.length} industry codes.`,
+            variant: "default",
+          });
+        },
+        error: (error) => {
+          console.error("❌ Failed to parse CSV:", error);
+          toast({
+            title: "CSV Parsing Error",
+            description: "Could not parse the uploaded file.",
+            variant: "destructive",
+          });
+        }
       });
+
     } else {
       setInfoFile(null);
       setAvailableIndustries([]);
+      useClusteringStore.getState().setUploadedData([]);
       console.log("❌ Invalid file type or no file selected");
     }
+  };
+
+  const downloadInputJson = (data: z.infer<typeof parametersSchema>) => {
+    const inputJson = {
+      pca_dim: data.pca_dim,
+      lambda: data.lambda,
+      k: data.k,
+      level_value: data.level_value
+    };
+    
+    const blob = new Blob([JSON.stringify(inputJson, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clustering-input.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Input JSON Downloaded",
+      description: "Clustering input parameters have been downloaded as JSON",
+      variant: "default",
+    });
+  };
+
+  const downloadOutputJson = () => {
+    if (!results?.clusterResult) {
+      toast({
+        title: "No Results Available",
+        description: "Please run clustering first to generate output data",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Handle new API response format with companies array
+    const outputJson = {
+      best_k: results.clusterResult.best_k,
+      companies: results.clusterResult.companies || [],
+      // Legacy fields for backward compatibility
+      dataset_id: results.clusterResult.dataset_id,
+      embedding: results.clusterResult.embedding,
+      labels: results.clusterResult.labels,
+      level: results.clusterResult.level || 1,
+      level_value: results.clusterResult.level_value,
+      mode: results.clusterResult.mode || "subset",
+      n_samples: results.clusterResult.n_samples,
+      size: results.clusterResult.size
+    };
+    
+    const blob = new Blob([JSON.stringify(outputJson, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clustering-output.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Output JSON Downloaded",
+      description: "Clustering results have been downloaded as JSON",
+      variant: "default",
+    });
   };
 
   return (
@@ -236,12 +316,28 @@ export default function ClusteringForm() {
                   <div className="flex space-x-2">
                     <FormControl>
                       <Input
-                        type="number"
-                        min="2"
-                        max="20"
-                        placeholder="6"
+                        type="text" // Allow array-like input, e.g., "3,4,5"
+                        placeholder="6 or [3,4,5,6]"
                         {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value))}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // Try to parse as an array, otherwise as a number
+                          if (value.startsWith('[') && value.endsWith(']')) {
+                            try {
+                              const parsed = JSON.parse(value);
+                              if (Array.isArray(parsed)) {
+                                field.onChange(parsed.map(Number));
+                                return;
+                              }
+                            } catch (error) {
+                              // Ignore parse error, treat as string
+                            }
+                          }
+                          // Handle single number
+                          const num = parseInt(value, 10);
+                          field.onChange(isNaN(num) ? value : num);
+                        }}
+                        value={Array.isArray(field.value) ? JSON.stringify(field.value) : (field.value ?? '')}
                         className="flex-1"
                         data-testid="input-k"
                       />
@@ -297,7 +393,7 @@ export default function ClusteringForm() {
                   <FormLabel>Mã ngành</FormLabel>
                   <FormControl>
                     <IndustrySelector
-                      value={field.value}
+                      value={Array.isArray(field.value) ? field.value : (field.value ? [field.value] : [])}
                       onValueChange={field.onChange}
                       placeholder="Chọn mã ngành..."
                       data-testid="select-level-value"
@@ -328,9 +424,21 @@ export default function ClusteringForm() {
               </p>
             </div>
 
-            <Button type="submit" className="w-full" data-testid="button-update-parameters">
-              Update Parameters
-            </Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1" data-testid="button-update-parameters">
+                Update Parameters
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => downloadInputJson(parametersForm.getValues())}
+                className="flex items-center gap-2"
+                data-testid="button-download-input"
+              >
+                <Download className="h-4 w-4" />
+                Input JSON
+              </Button>
+            </div>
           </form>
         </Form>
       </div>
@@ -385,9 +493,22 @@ export default function ClusteringForm() {
               )}
             </div>
             
-            <Button type="submit" className="w-full" data-testid="button-update-config">
-              Update Configuration
-            </Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1" data-testid="button-update-config">
+                Update Configuration
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={downloadOutputJson}
+                className="flex items-center gap-2"
+                data-testid="button-download-output"
+                disabled={!results?.clusterResult}
+              >
+                <Download className="h-4 w-4" />
+                Output JSON
+              </Button>
+            </div>
           </form>
         </Form>
       </div>

@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import { ClusteringParams, ApiConfig, ClusterResult, ClusterMetrics, DataPoint } from "../../../shared/schema";
+import { ClusteringParams, ApiConfig, ClusterResult, ClusterMetrics, DataPoint, Company, Enterprise } from "../../../shared/schema";
 import { clusteringApi } from "./clustering-api";
+import { Console } from "console";
+import { Alert } from "@/components/ui/alert";
 
 interface LogEntry {
   type: "info" | "success" | "error" | "warning";
@@ -25,6 +27,7 @@ interface ClusteringState {
   // File uploads
   embeddingsFile: File | null;
   infoFile: File | null;
+  uploadedData: any[];
   
   // Processing state
   isRunning: boolean;
@@ -44,6 +47,7 @@ interface ClusteringState {
   updateApiConfig: (config: Partial<ApiConfig>) => void;
   setEmbeddingsFile: (file: File | null) => void;
   setInfoFile: (file: File | null) => void;
+  setUploadedData: (data: any[]) => void;
   runClustering: (infoFile?: File) => Promise<void>;
   clearResults: () => void;
   clearError: () => void;
@@ -60,13 +64,14 @@ export const useClusteringStore = create<ClusteringState>()(
         lambda: 0.5,
         k: 3,
         pca_dim: 128,
-        level_value: "",
+        level_value: [],
       },
       apiConfig: {
         endpoint: "",
       },
       embeddingsFile: null,
       infoFile: null,
+      uploadedData: [],
       isRunning: false,
       progress: 0,
       logs: [],
@@ -88,6 +93,7 @@ export const useClusteringStore = create<ClusteringState>()(
 
       setEmbeddingsFile: (file) => set({ embeddingsFile: file }),
       setInfoFile: (file) => set({ infoFile: file }),
+      setUploadedData: (data) => set({ uploadedData: data }),
 
       addLog: (entry) =>
         set((state) => ({
@@ -129,7 +135,7 @@ export const useClusteringStore = create<ClusteringState>()(
           // Step 1: Validate parameters and prepare data (20%)
           set({ progress: 20 });
           get().addLog({ type: "info", message: "Validating parameters..." });
-          
+          console.log(parameters);
           if (!parameters.lambda || !parameters.k || !parameters.level_value) {
             throw new Error("Missing required parameters: lambda, k, and level_value");
           }
@@ -189,9 +195,97 @@ export const useClusteringStore = create<ClusteringState>()(
           // Process cluster result data
           let finalDataPoints: DataPoint[] = [];
           
-          // Use direct data from clusterResult (embedding coordinates and labels)
-          if (clusterResult.embedding && clusterResult.labels) {
-            console.log("🔧 Processing direct embedding data from backend");
+          // Handle new API response format with companies object (key = taxcode)
+          if (clusterResult.companies && typeof clusterResult.companies === 'object') {
+            console.log("🔧 Processing companies object format");
+            const companyEntries = Object.entries(clusterResult.companies);
+            console.log("🏢 Number of companies:", companyEntries.length);
+            
+            let pointIndex = 0;
+            companyEntries.forEach(([taxcode, companyData]: [string, any]) => {
+              const clusterLabel = companyData.label || 0;
+              const pcaX = companyData.pca_V?.[0] || 0;
+              const pcaY = companyData.pca_V?.[1] || 0;
+              const size = companyData.size || 1;
+              
+              // Extract company information from the new structure
+              const companyInfo = {
+                name: companyData.industryName || 'Unknown Company',
+                taxcode: taxcode,
+                sector_name: companyData.industryName || '',
+                sector_unique_id: companyData.sector_unique_id || '',
+                empl_qtty: parseFloat(companyData.empl_qtty) || 0,
+                yearreport: parseInt(companyData.yearreport) || 2024,
+                industryCode: companyData.industryCode || '',
+                industryPath: companyData.industryPath || ''
+              };
+              
+              finalDataPoints.push({
+                id: pointIndex.toString(),
+                info: companyInfo,
+                embedding: [], // Not provided in this format
+                pca: {
+                  x: pcaX,
+                  y: pcaY
+                },
+                cluster: clusterLabel,
+                size: size,
+              });
+              
+              pointIndex++;
+            });
+            
+            console.log("✅ Created", finalDataPoints.length, "data points from companies object");
+            console.log("📋 Sample data point:", finalDataPoints[0]);
+          } else if (clusterResult.companies && Array.isArray(clusterResult.companies)) {
+            console.log("🔧 Processing new API response format with companies array");
+            console.log("🏢 Number of companies:", clusterResult.companies.length);
+            
+            let pointIndex = 0;
+            clusterResult.companies.forEach((company: Company) => {
+              if (company.enterprise && Array.isArray(company.enterprise)) {
+                company.enterprise.forEach((enterprise: Enterprise) => {
+                  const clusterLabel = enterprise.cluster || enterprise.Label || 0;
+                  const embedding = enterprise.embedding || [];
+                  const pcaX = enterprise.pca2_x || 0;
+                  const pcaY = enterprise.pca2_y || 0;
+                  
+                  // Extract company information
+                  const companyInfo = {
+                    name: enterprise.name || 'Unknown Company',
+                    taxcode: enterprise.taxcode || '',
+                    sector_name: enterprise.sector_name || '',
+                    sector_unique_id: enterprise.sector_unique_id || company.sector_unique_id || '',
+                    empl_qtty: enterprise.empl_qtty || 0,
+                    yearreport: enterprise.yearreport || 2024,
+                    s_DT_TTM: enterprise.s_DT_TTM || 0,
+                    s_EMPL: enterprise.s_EMPL || 0,
+                    s_TTS: enterprise.s_TTS || 0,
+                    s_VCSH: enterprise.s_VCSH || 0
+                  };
+                  
+                  finalDataPoints.push({
+                    id: pointIndex.toString(),
+                    info: companyInfo,
+                    embedding: embedding,
+                    pca: {
+                      x: pcaX,
+                      y: pcaY
+                    },
+                    cluster: clusterLabel,
+                    size: 1, // Default size, can be calculated later
+                  });
+                  
+                  pointIndex++;
+                });
+              }
+            });
+            
+            console.log("✅ Created", finalDataPoints.length, "data points from companies data");
+            console.log("📋 Sample data point:", finalDataPoints[0]);
+          } else if (clusterResult.embedding && clusterResult.labels) {
+            // Fallback: Use direct data from clusterResult (old format)
+            console.log("🔧 Processing direct embedding data from backend (legacy format)");
             console.log("📊 Embedding length:", clusterResult.embedding.length);
             console.log("🏷️ Labels length:", clusterResult.labels.length);
             
@@ -204,11 +298,11 @@ export const useClusteringStore = create<ClusteringState>()(
                 info: {},
                 embedding: coords,
                 pca: {
-                  x: coords[0], // Use actual PCA coordinates from backend
+                  x: coords[0],
                   y: coords[1]
                 },
                 cluster: clusterLabel,
-                size: clusterSize, // Add size data from backend
+                size: clusterSize,
               });
             });
             
@@ -257,7 +351,7 @@ export const useClusteringStore = create<ClusteringState>()(
           }
 
           // Create metrics
-          const clusters = Array.from(new Set(finalDataPoints.map(d => d.cluster).filter(Boolean)));
+          const clusters = Array.from(new Set(finalDataPoints.map(d => d.cluster).filter(c => c !== null && c !== undefined) as number[]));
           const metrics: ClusterMetrics = {
             silhouetteScore: 0.742,
             inertia: 1234.56,

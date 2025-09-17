@@ -1,10 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useClusteringStore } from "../lib/clustering-store";
-import FileUploadZone from "@/components/file-upload-zone";
 import ClusteringForm from "@/components/clustering-form";
 import ScatterPlot from "@/components/scatter-plot";
+import TestRealData from "@/components/test-real-data";
+import OptimalKChart from "@/components/optimal-k-chart";
+import { CorrelationAnalysis } from "@/components/correlation-analysis";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, AlertCircle, Loader2, TestTube } from "lucide-react";
@@ -12,8 +15,6 @@ import { Link } from "wouter";
 
 export default function ClusteringPage() {
   const {
-    embeddingsFile,
-    infoFile,
     isRunning,
     progress,
     error,
@@ -21,6 +22,7 @@ export default function ClusteringPage() {
     runClustering,
     clearError,
   } = useClusteringStore();
+  const [activeTab, setActiveTab] = useState("cluster-visualization");
 
   const canRunClustering = !isRunning;
 
@@ -122,26 +124,6 @@ export default function ClusteringPage() {
             )}
           </div>
 
-          {/* Export Controls */}
-          {results && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium text-foreground">Export Options</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" size="sm" data-testid="export-csv">
-                  CSV
-                </Button>
-                <Button variant="outline" size="sm" data-testid="export-json">
-                  JSON
-                </Button>
-                <Button variant="outline" size="sm" data-testid="export-png">
-                  PNG
-                </Button>
-                <Button variant="outline" size="sm" data-testid="export-svg">
-                  SVG
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -149,26 +131,29 @@ export default function ClusteringPage() {
       <div className="flex-1 flex flex-col">
         {/* Chart Area */}
         <div className="flex-1 flex flex-col">
-          {/* Top Toolbar */}
-          <div className="bg-card border-b border-border px-4 lg:px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <h2 className="text-lg font-semibold text-foreground">
-                  Cluster Visualization
-                </h2>
-                {results && (
-                  <div className="bg-muted px-3 py-1 rounded-full text-sm text-muted-foreground" data-testid="data-points-count">
-                    {results.dataPoints?.length || 0} data points
-                  </div>
-                )}
-              </div>
+          {/* Tabs for switching between charts */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+            <div className="bg-card border-b border-border px-4 lg:px-6 py-2">
+              <TabsList>
+                <TabsTrigger value="cluster-visualization">Cluster Visualization</TabsTrigger>
+                <TabsTrigger value="test-data">Test Real Data</TabsTrigger>
+                <TabsTrigger value="optimal-k">Optimal K-Value</TabsTrigger>
+                <TabsTrigger value="correlation-analysis">Correlation Analysis</TabsTrigger>
+              </TabsList>
             </div>
-          </div>
-
-          {/* Chart */}
-          <div className="flex-1 p-4 lg:p-6">
-            <ScatterPlot />
-          </div>
+            <TabsContent value="cluster-visualization" className="flex-1 p-4 lg:p-6">
+              <ScatterPlot />
+            </TabsContent>
+            <TabsContent value="test-data" className="flex-1 p-4 lg:p-6">
+              <TestRealData />
+            </TabsContent>
+            <TabsContent value="optimal-k" className="flex-1 p-4 lg:p-6">
+              <OptimalKChart />
+            </TabsContent>
+            <TabsContent value="correlation-analysis" className="flex-1 p-4 lg:p-6">
+              <CorrelationAnalysis />
+            </TabsContent>
+          </Tabs>
         </div>
 
       </div>

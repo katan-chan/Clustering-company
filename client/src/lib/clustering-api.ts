@@ -7,60 +7,56 @@ interface ClusteringRequest {
 
 class ClusteringApi {
   async getMeta(config: ApiConfig) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    try {
-      console.error(`[DEBUG] Calling API: ${config.endpoint}/meta`);
-      console.error(`[DEBUG] Full URL: ${config.endpoint}/meta`);
-      
-      const response = await fetch(`${config.endpoint}/meta`, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        signal: controller.signal,
-      });
+  try {
+    const url = `${config.endpoint}meta`; // thêm /meta cho chuẩn endpoint
+    console.error(`[DEBUG] Calling API: ${url}`);
+    console.log(">>>Response received:1111111111");
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      headers: {
+        'Accept': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      signal: controller.signal,
+    });
+    console.log(">>>Response received:", response);
+    clearTimeout(timeoutId);
 
-      clearTimeout(timeoutId);
-      
-      console.error(`[DEBUG] Response status: ${response.status}`);
-      console.error(`[DEBUG] Response URL: ${response.url}`);
-      console.error(`[DEBUG] Response redirected: ${response.redirected}`);
-      
-      // Check what we actually received
-      const responseText = await response.text();
-      console.error(`[DEBUG] Response body:`, responseText);
-      console.error(`[DEBUG] Content-Type:`, response.headers.get('content-type'));
+    console.error(`[DEBUG] Response status: ${response.status}`);
 
-      if (!response.ok) {
-        throw new Error(`API Error ${response.status}: ${response.statusText}`);
-      }
-
-      // Check if response is actually JSON
-      if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
-        throw new Error(`Server trả về HTML thay vì JSON. Có thể bị redirect hoặc proxy issue.`);
-      }
-
-      console.error(`[DEBUG] API connection successful - received JSON`);
-      return { status: 'ok' };
-      
-    } catch (error) {
-      clearTimeout(timeoutId);
-      
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error(`Timeout: API không phản hồi sau 10 giây. Kiểm tra ${config.endpoint}`);
-        }
-        if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
-          throw new Error(`Không thể kết nối đến API: ${config.endpoint}. Kiểm tra endpoint URL và kết nối mạng.`);
-        }
-      }
-      throw error;
+    
+    if (!response.ok) {
+      throw new Error(`API Error ${response.status}: ${response.statusText}`);
     }
+
+    // Parse JSON trực tiếp
+    const data = await response.json();
+    console.error(`[DEBUG] Parsed JSON:`, data);
+
+    return data; // không fix cứng {status:'ok'} nữa
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error(`Timeout: API không phản hồi sau 10 giây. Kiểm tra ${config.endpoint}`);
+      }
+      if (
+        error.message.includes('fetch') ||
+        error.message.includes('NetworkError') ||
+        error.message.includes('TypeError')
+      ) {
+        throw new Error(`Không thể kết nối đến API: ${config.endpoint}meta`);
+      }
+    }
+    throw error;
   }
+}
+
 
   async runPrepare(files: { embeddings: File; info: File }, config: ApiConfig): Promise<any> {
     const controller = new AbortController();
@@ -120,8 +116,6 @@ class ClusteringApi {
   }
 
   async runClustering(config: ApiConfig, params: ClusteringParams, infoFileBase64?: string): Promise<ClusterResult> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
     
     try {
       const requestBody = {
@@ -155,7 +149,6 @@ class ClusteringApi {
           'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify(requestBody),
-        signal: controller.signal,
       });
 
       console.log("📡 API Response Status:", response.status);
@@ -167,19 +160,27 @@ class ClusteringApi {
         throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
       }
 
-      const result = await response.json();
-      console.log("✅ API Response Data:");
-      console.log("📊 Full Backend Response:");
-      console.log(JSON.stringify(result, null, 2));
-
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
+      // Get response text first to handle NaN values
+      const responseText = await response.text();
+      console.log("📥 Raw API Response Text (first 500 chars):", responseText.substring(0, 500));
       
+      // Replace NaN values with null to make valid JSON
+      const sanitizedText = responseText.replace(/:\s*NaN\s*([,}])/g, ': null$1');
+      
+      try {
+        const result = JSON.parse(sanitizedText);
+        console.log("✅ API Response Data:");
+        console.log("📊 Full Backend Response:");
+        console.log(JSON.stringify(result, null, 2));
+        
+        return result;
+      } catch (parseError) {
+        console.error("❌ JSON Parse Error:", parseError);
+        console.error("🔍 Problematic text:", sanitizedText.substring(0, 1000));
+        throw new Error(`Invalid JSON response from API: ${parseError}`);
+      }
+    } catch (error) {
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error(`Timeout: API clustering không phản hồi sau 30 giây`);
-        }
         if (error.message.includes('fetch') || error.message.includes('NetworkError') || error.message.includes('TypeError')) {
           throw new Error(`Không thể kết nối đến API clustering: ${config.endpoint}/cluster/run`);
         }

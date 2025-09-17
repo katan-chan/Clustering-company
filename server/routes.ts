@@ -1,8 +1,41 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { spawn } from "child_process";
+import path from "path";
 import { storage } from "./storage";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Correlation Module API route
+  app.post("/api/correlation/calculate", (req, res) => {
+    const pythonProcess = spawn("python", [path.join(__dirname, "..", "correlation_module.py")]);
+
+    let dataToSend = "";
+    pythonProcess.stdout.on("data", (data) => {
+      dataToSend += data.toString();
+    });
+
+    let errorToSend = "";
+    pythonProcess.stderr.on("data", (data) => {
+      errorToSend += data.toString();
+    });
+
+    pythonProcess.on("close", (code) => {
+      if (code !== 0) {
+        console.error(`Correlation script exited with code ${code}: ${errorToSend}`);
+        return res.status(500).json({ error: "Failed to execute correlation script", details: errorToSend });
+      }
+      try {
+        const result = JSON.parse(dataToSend);
+        res.json(result);
+      } catch (e) {
+        res.status(500).json({ error: "Failed to parse python script output." });
+      }
+    });
+
+    // Write the request body to the script's stdin
+    pythonProcess.stdin.write(JSON.stringify(req.body));
+    pythonProcess.stdin.end();
+  });
   // Clustering API proxy routes
   app.get("/api/clustering/meta", async (req, res) => {
     try {
@@ -72,7 +105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // File download proxy (for accessing clustering results)
   app.get("/api/files/*", async (req, res) => {
     try {
-      const filePath = req.params[0];
+      const filePath = (req.params as { 0: string })[0];
       
       // In a real implementation, this would proxy to the actual clustering service
       // For now, return appropriate mock responses based on file type

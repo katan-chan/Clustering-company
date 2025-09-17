@@ -21,8 +21,8 @@ import { Badge } from "@/components/ui/badge";
 import { getAllIndustries, getIndustriesByLevel, type IndustryLevel } from "@/lib/industry-parser";
 
 interface IndustrySelectorProps {
-  value?: string;
-  onValueChange: (value: string) => void;
+  value?: string[];
+  onValueChange: (value: string[]) => void;
   placeholder?: string;
   "data-testid"?: string;
   availableIndustries?: string[];
@@ -31,7 +31,7 @@ interface IndustrySelectorProps {
 }
 
 export default function IndustrySelector({ 
-  value, 
+  value = [], 
   onValueChange, 
   placeholder = "Chọn mã ngành...",
   "data-testid": testId,
@@ -67,12 +67,27 @@ export default function IndustrySelector({
     );
   }, [industries, showOnlyAvailable, availableIndustries]);
 
+  // When "show only available" is toggled, filter out unavailable selections
+  useEffect(() => {
+    if (showOnlyAvailable && availableIndustries.length > 0) {
+      const availableSet = new Set(availableIndustries);
+      const validSelections = value.filter(code => {
+        const industry = industries.find(ind => ind.apiCode === code);
+        return industry && (availableSet.has(industry.apiCode) || availableSet.has(industry.code));
+      });
+
+      if (validSelections.length !== value.length) {
+        onValueChange(validSelections);
+      }
+    }
+  }, [showOnlyAvailable, availableIndustries, industries, value, onValueChange]);
+
   // Group industries by level for better display
   const industriesByLevel = useMemo(() => {
     return getIndustriesByLevel(filteredIndustries);
   }, [filteredIndustries]);
 
-  const selectedIndustry = industries.find(industry => industry.apiCode === value);
+  const selectedIndustries = industries.filter(industry => value.includes(industry.apiCode));
 
   const getLevelLabel = (level: number) => {
     switch (level) {
@@ -110,13 +125,13 @@ export default function IndustrySelector({
           className="w-full justify-between"
           data-testid={testId}
         >
-          {selectedIndustry ? (
+          {selectedIndustries.length > 0 ? (
             <div className="flex items-center space-x-2 truncate">
               <Badge variant="secondary" className="text-xs">
-                Level {selectedIndustry.level}
+                {selectedIndustries.length} mã đã chọn
               </Badge>
               <span className="truncate">
-                {selectedIndustry.apiCode}: {selectedIndustry.name}
+                {selectedIndustries.map(ind => ind.apiCode).join(", ")}
               </span>
             </div>
           ) : (
@@ -162,16 +177,17 @@ export default function IndustrySelector({
                       key={industry.code}
                       value={`${industry.code} ${industry.name}`}
                       onSelect={() => {
-                        onValueChange(industry.apiCode === value ? "" : industry.apiCode);
-                        setOpen(false);
+                        const isSelected = value.includes(industry.apiCode);
+                        const newValue = isSelected 
+                          ? value.filter(code => code !== industry.apiCode)
+                          : [...value, industry.apiCode];
+                        onValueChange(newValue);
                       }}
                       className="flex items-center space-x-2"
                     >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          value === industry.apiCode ? "opacity-100" : "opacity-0"
-                        )}
+                      <Checkbox
+                        checked={value.includes(industry.apiCode)}
+                        className="mr-2 h-4 w-4"
                       />
                       <Badge variant="outline" className="text-xs">
                         {industry.apiCode}
