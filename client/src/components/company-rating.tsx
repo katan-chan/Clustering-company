@@ -1046,6 +1046,51 @@ export default function CompanyRating() {
                     <Badge variant="secondary">{tierDataList.length} indicator(s)</Badge>
                   )}
                 </CardTitle>
+                
+                {/* Chart Description */}
+                {tierDataList && tierDataList.length > 0 && (
+                  <div className="mt-4 p-4 bg-muted/50 rounded-lg border">
+                    <h4 className="text-sm font-semibold mb-2 text-foreground">📋 Hướng dẫn đọc biểu đồ:</h4>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <p><strong>• Cấu trúc biểu đồ:</strong> Biểu đồ cột thể hiện phân bố doanh nghiệp theo các mức rating</p>
+                          <p><strong>• Trục ngang (X):</strong> Các mức tier từ T1 đến T8 kèm score range tương ứng</p>
+                          <p><strong>• Trục dọc (Y):</strong> Số lượng doanh nghiệp trong từng tier</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p><strong>• Thang đánh giá:</strong></p>
+                          <div className="ml-4 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 bg-emerald-500 rounded"></div>
+                              <span>T1-T2: Rủi ro thấp nhất (Tốt nhất)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 bg-yellow-500 rounded"></div>
+                              <span>T3-T5: Rủi ro trung bình</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-3 h-3 bg-red-500 rounded"></div>
+                              <span>T6-T8: Rủi ro cao nhất (Cần cẩn trọng)</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+                        <p><strong>🔬 Phương pháp phân loại (Method):</strong></p>
+                        <div className="ml-4 space-y-0.5">
+                          <p><strong>• K-means clustering:</strong> Thuật toán phân cụm tự động chia doanh nghiệp thành các nhóm</p>
+                          <p><strong>• High-good mode:</strong> Giá trị cao = Tốt → T1 có score cao nhất (ít rủi ro)</p>
+                          <p><strong>• Low-good mode:</strong> Giá trị thấp = Tốt → T1 có score thấp nhất (ít rủi ro)</p>
+                          <p className="text-xs italic">*Mode được xác định dựa trên bản chất của từng chỉ số tài chính</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-border/50">
+                        <p><strong>💡 Cách sử dụng:</strong> Hover chuột lên các cột để xem chi tiết score range. </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="p-6 h-full">
                 {loading ? (
@@ -1059,14 +1104,27 @@ export default function CompanyRating() {
                   <div ref={plotRef} className="w-full h-full min-h-[500px]" />
                 ) : (
                   <div className="flex items-center justify-center h-full min-h-[400px]">
-                    <div className="text-center">
+                    <div className="text-center max-w-md">
                       <div className="mb-4">📊</div>
-                      <h3 className="text-lg font-medium mb-2">No Chart Data</h3>
+                      <h3 className="text-lg font-medium mb-2">Biểu đồ phân bố Rating doanh nghiệp</h3>
                       <p className="text-muted-foreground mb-4">
-                        Select indicators and load data to view tier distribution charts.
+                        Chọn chỉ số tài chính và load dữ liệu để xem biểu đồ phân bố tier rating.
                       </p>
+                      
+                      <div className="text-sm text-muted-foreground mb-4 p-3 bg-muted/30 rounded-lg">
+                        <p className="font-medium mb-2">📋 Biểu đồ sẽ hiển thị:</p>
+                        <div className="text-left space-y-1">
+                          <p>• <strong>8 cột màu</strong> đại diện cho các tier T1-T8</p>
+                          <p>• <strong>Màu xanh → đỏ</strong> thể hiện mức độ rủi ro tăng dần</p>
+                          <p>• <strong>Score range</strong> hiển thị trên trục ngang</p>
+                          <p>• <strong>Số lượng doanh nghiệp</strong> trong từng tier</p>
+                          <p>• <strong>T1 = Ít rủi ro nhất</strong>, T8 = Rủi ro cao nhất</p>
+                          <p>• <strong>Method (K-means):</strong> Phân cụm tự động theo high-good/low-good</p>
+                        </div>
+                      </div>
+                      
                       <div className="text-sm text-muted-foreground">
-                        Or click <Badge variant="outline">📊 Load Mock Tier Data</Badge> to test with sample data
+                        Hoặc click <Badge variant="outline">📊 Load Mock Tier Data</Badge> để xem dữ liệu mẫu
                       </div>
                     </div>
                   </div>
