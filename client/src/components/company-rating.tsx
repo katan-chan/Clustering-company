@@ -21,6 +21,30 @@ const apiSchema = z.object({
   endpoint: z.string().url("Please enter a valid URL"),
 });
 
+// Mapping các sector với tên ngành từ file name.txt
+const sectorNames: Record<string, string> = {
+  'A': 'NÔNG NGHIỆP, LÂM NGHIỆP VÀ THUỶ SẢN',
+  'B': 'KHAI KHOÁNG',
+  'C': 'CÔNG NGHIỆP CHẾ BIẾN, CHẾ TẠO',
+  'D': 'SẢN XUẤT VÀ PHÂN PHỐI ĐIỆN, KHÍ ĐỐT, NƯỚC NÓNG, HƠI NƯỚC VÀ ĐIỀU HOÀ KHÔNG KHÍ',
+  'E': 'CUNG CẤP NƯỚC; HOẠT ĐỘNG QUẢN LÝ VÀ XỬ LÝ RÁC THẢI, NƯỚC THẢI',
+  'F': 'XÂY DỰNG',
+  'G': 'BÁN BUÔN VÀ BÁN LẺ; SỬA CHỮA Ô TÔ, MÔ TÔ, XE MÁY VÀ XE CÓ ĐỘNG CƠ KHÁC',
+  'H': 'VẬN TẢI KHO BÃI',
+  'I': 'DỊCH VỤ LƯU TRÚ VÀ ĂN UỐNG',
+  'J': 'THÔNG TIN VÀ TRUYỀN THÔNG',
+  'K': 'HOẠT ĐỘNG TÀI CHÍNH, NGÂN HÀNG VÀ BẢO HIỂM',
+  'L': 'HOẠT ĐỘNG KINH DOANH BẤT ĐỘNG SẢN',
+  'M': 'HOẠT ĐỘNG CHUYÊN MÔN, KHOA HỌC VÀ CÔNG NGHỆ',
+  'N': 'HOẠT ĐỘNG HÀNH CHÍNH VÀ DỊCH VỤ HỖ TRỢ',
+  'O': 'HOẠT ĐỘNG CỦA ĐẢNG CỘNG SẢN, TỔ CHỨC CHÍNH TRỊ - XÃ HỘI, QUẢN LÝ NHÀ NƯỚC, AN NINH QUỐC PHÒNG; BẢO ĐẢM XÃ HỘI BẮT BUỘC',
+  'P': 'GIÁO DỤC VÀ ĐÀO TẠO',
+  'Q': 'Y TẾ VÀ HOẠT ĐỘNG TRỢ GIÚP XÃ HỘI',
+  'R': 'NGHỆ THUẬT, VUI CHƠI VÀ GIẢI TRÍ',
+  'S': 'HOẠT ĐỘNG DỊCH VỤ KHÁC',
+  'T': 'HOẠT ĐỘNG LÀM THUÊ CÁC CÔNG VIỆC TRONG CÁC HỘ GIA ĐÌNH, SẢN XUẤT SẢN PHẨM VẬT CHẤT VÀ DỊCH VỤ TỰ TIÊU DÙNG CỦA HỘ GIA ĐÌNH'
+};
+
 export default function CompanyRating() {
   const { toast } = useToast();
   const plotRef = useRef<HTMLDivElement>(null);
@@ -622,7 +646,7 @@ export default function CompanyRating() {
       
       const layout = {
         title: {
-          text: `${tierData.indicator} - Sector ${tierData.sector}<br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`,
+          text: `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)}<br><sub>CÁC DOANH NGHIỆP: (${tierData.sector}) ${sectorNames[tierData.sector] || `Sector ${tierData.sector}`}</sub><br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`,
           font: { size: 16 }
         },
         xaxis: { 
@@ -632,7 +656,7 @@ export default function CompanyRating() {
           automargin: true
         },
         yaxis: { title: 'Number of Companies', tickfont: { size: 12 } },
-        margin: { t: 120, r: 50, b: 120, l: 60 },
+        margin: { t: 160, r: 50, b: 120, l: 60 },
         plot_bgcolor: 'rgba(0,0,0,0)',
         paper_bgcolor: 'rgba(0,0,0,0)',
         font: { family: 'Inter, sans-serif' }
@@ -1142,10 +1166,10 @@ export default function CompanyRating() {
                     <Card key={`tier-${index}`}>
                       <CardHeader>
                         <CardTitle className="text-lg">
-                          {tierData.indicator} - Sector {tierData.sector} (Group {tierData.group_label})
+                          {tierData.indicator}: {ratingApi.getIndicatorDescription(tierData.indicator)} - CÁC DOANH NGHIỆP: ({tierData.sector}) {sectorNames[tierData.sector] || `Sector ${tierData.sector}`}
                         </CardTitle>
                         <p className="text-sm text-muted-foreground">
-                          Method: {tierData.method.label} ({tierData.method.mode})
+                          Group: {tierData.group_label} | Method: {tierData.method.label} ({tierData.method.mode})
                         </p>
                       </CardHeader>
                       <CardContent>
