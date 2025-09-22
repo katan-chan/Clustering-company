@@ -17,6 +17,10 @@ interface TierRequest {
   indicator: string;
 }
 
+interface TierAllRequest {
+  indicator: string;
+}
+
 interface Tier {
   tier: string;
   range: [number | string, number | string];
@@ -31,6 +35,15 @@ interface TierResponse {
     mode: string;
   };
   sector: string;
+  tiers: Tier[];
+}
+
+interface TierAllResponse {
+  indicator: string;
+  method: {
+    label: string;
+    mode: string;
+  };
   tiers: Tier[];
 }
 
@@ -223,6 +236,64 @@ class RatingApi {
     }
   }
 
+  async getTiersAll(
+    request: TierAllRequest,
+    config: RatingConfig,
+  ): Promise<TierAllResponse> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const url = `${config.endpoint}/tiers/all`;
+      console.log(`🔄 Calling Tiers All API: ${url}`);
+      console.log(`📋 Request payload:`, request);
+
+      const response = await fetch(url, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Tiers All API Error Response:`, errorText);
+        throw new Error(
+          `HTTP error! status: ${response.status}, body: ${errorText}`,
+        );
+      }
+
+      const tierData = await response.json();
+      console.log(`✅ Tier All data received:`, tierData);
+      return tierData;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          throw new Error(`Timeout: Tiers All API không phản hồi sau 15 giây`);
+        }
+        if (
+          error.message.includes("fetch") ||
+          error.message.includes("NetworkError") ||
+          error.message.includes("TypeError")
+        ) {
+          throw new Error(
+            `Không thể kết nối đến Tiers All API: ${config.endpoint}/tiers/all`,
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
   async getCompanyDetails(
     request: CompanyDetailRequest,
     config: RatingConfig,
@@ -339,7 +410,9 @@ export const ratingApi = new RatingApi();
 export type {
   RatingConfig,
   TierRequest,
+  TierAllRequest,
   TierResponse,
+  TierAllResponse,
   CompanyDetail,
   CompanyDetailRequest,
   Tier,

@@ -15,7 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Plotly from 'plotly.js-dist';
-import { ratingApi, type RatingConfig, type TierResponse, type CompanyDetail, type Tier } from "@/lib/rating-api";
+import { ratingApi, type RatingConfig, type TierResponse, type TierAllResponse, type CompanyDetail, type Tier } from "@/lib/rating-api";
 
 const apiSchema = z.object({
   endpoint: z.string().url("Please enter a valid URL"),
@@ -82,7 +82,7 @@ export default function CompanyRating() {
     if (selectedIndicators.length > 0 && selectedSector && ratingConfig.endpoint) {
       loadTierData();
     }
-  }, [selectedIndicators, selectedSector, selectedGroupLabel, ratingConfig.endpoint]);
+  }, [selectedIndicators, selectedSector, selectedSector === "All" ? null : selectedGroupLabel, ratingConfig.endpoint]);
 
   // Update charts when tier data changes
   useEffect(() => {
@@ -480,34 +480,64 @@ export default function CompanyRating() {
 
     setLoading(true);
     try {
-      const tierResponses = await Promise.all(
-        selectedIndicators.map(async (indicator) => {
-          console.log(`📊 Fetching tier data for indicator: ${indicator}`);
-          const response = await ratingApi.getTiers({
-            sector: selectedSector,
-            group_label: selectedGroupLabel,
-            indicator: indicator,
-          }, ratingConfig);
-          console.log(`✅ Tier data received for ${indicator}:`, response);
-          return response;
-        })
-      );
-      
-      console.log("🎯 All tier responses received:", tierResponses);
-      
-      // Validate tier responses
-      tierResponses.forEach((response, index) => {
-        console.log(`🔍 Validating response ${index}:`, {
-          indicator: response.indicator,
-          sector: response.sector,
-          groupLabel: response.group_label,
-          method: response.method,
-          tiersCount: response.tiers?.length || 0,
-          sampleTier: response.tiers?.[0]
+      if (selectedSector === "All") {
+        // Use /tiers/all API for All Sectors
+        console.log("🌍 Loading tier data for All Sectors");
+        const tierResponses = await Promise.all(
+          selectedIndicators.map(async (indicator) => {
+            console.log(`📊 Fetching tier data for all sectors, indicator: ${indicator}`);
+            const response = await ratingApi.getTiersAll({
+              indicator: indicator,
+            }, ratingConfig);
+            console.log(`✅ Tier All data received for ${indicator}:`, response);
+            
+            // Convert TierAllResponse to TierResponse format for consistency
+            const normalizedResponse: TierResponse = {
+              group_label: -1, // Special value to indicate "All Sectors"
+              indicator: response.indicator,
+              method: response.method,
+              sector: "All",
+              tiers: response.tiers
+            };
+            
+            return normalizedResponse;
+          })
+        );
+        
+        console.log("🎯 All tier responses received (All Sectors):", tierResponses);
+        setTierDataList(tierResponses);
+      } else {
+        // Use existing /tiers/cluster API for specific sector
+        console.log(`🏢 Loading tier data for specific sector: ${selectedSector}`);
+        const tierResponses = await Promise.all(
+          selectedIndicators.map(async (indicator) => {
+            console.log(`📊 Fetching tier data for indicator: ${indicator}`);
+            const response = await ratingApi.getTiers({
+              sector: selectedSector,
+              group_label: selectedGroupLabel,
+              indicator: indicator,
+            }, ratingConfig);
+            console.log(`✅ Tier data received for ${indicator}:`, response);
+            return response;
+          })
+        );
+        
+        console.log("🎯 All tier responses received:", tierResponses);
+        
+        // Validate tier responses
+        tierResponses.forEach((response, index) => {
+          console.log(`🔍 Validating response ${index}:`, {
+            indicator: response.indicator,
+            sector: response.sector,
+            groupLabel: response.group_label,
+            method: response.method,
+            tiersCount: response.tiers?.length || 0,
+            sampleTier: response.tiers?.[0]
+          });
         });
-      });
-      
-      setTierDataList(tierResponses);
+        
+        setTierDataList(tierResponses);
+      }
       // updateCharts will be called automatically by useEffect when tierDataList changes
     } catch (error) {
       console.error("❌ Failed to load tier data:", error);
@@ -646,7 +676,9 @@ export default function CompanyRating() {
       
       const layout = {
         title: {
-          text: `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)}<br><sub>CÁC DOANH NGHIỆP: (${tierData.sector}) ${sectorNames[tierData.sector] || `Sector ${tierData.sector}`}</sub><br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`,
+          text: tierData.sector === "All" 
+            ? `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)}<br><sub>TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS</sub><br><sub>Method: ${tierData.method.label} (${tierData.method.mode})</sub>`
+            : `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)}<br><sub>CÁC DOANH NGHIỆP: (${tierData.sector}) ${sectorNames[tierData.sector] || `Sector ${tierData.sector}`}</sub><br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`,
           font: { size: 16 }
         },
         xaxis: { 
@@ -986,23 +1018,25 @@ export default function CompanyRating() {
                 </Select>
               </div>
               
-              {/* Group Label */}
-              <div className="space-y-2">
-                <Label>Group Label</Label>
-                <Select value={selectedGroupLabel.toString()} onValueChange={(value) => setSelectedGroupLabel(parseInt(value))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Group 0</SelectItem>
-                    {[1, 2, 3, 4].map(label => (
-                      <SelectItem key={label} value={label.toString()}>
-                        Group {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Group Label - Only show for specific sectors */}
+              {selectedSector !== "All" && (
+                <div className="space-y-2">
+                  <Label>Group Label</Label>
+                  <Select value={selectedGroupLabel.toString()} onValueChange={(value) => setSelectedGroupLabel(parseInt(value))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Group 0</SelectItem>
+                      {[1, 2, 3, 4].map(label => (
+                        <SelectItem key={label} value={label.toString()}>
+                          Group {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               
               <Separator />
               
@@ -1109,6 +1143,14 @@ export default function CompanyRating() {
                           <p className="text-xs italic">*Mode được xác định dựa trên bản chất của từng chỉ số tài chính</p>
                         </div>
                       </div>
+                      <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+                        <p><strong>🏢 Phạm vi phân tích:</strong></p>
+                        <div className="ml-4 space-y-0.5">
+                          <p><strong>• Sector cụ thể:</strong> Phân tích trong một ngành cụ thể với Group Label</p>
+                          <p><strong>• All Sectors:</strong> Phân tích toàn bộ doanh nghiệp trên tất cả các ngành</p>
+                          <p className="text-xs italic">*Chọn "All Sectors" để xem thang điểm tổng quan trên toàn bộ các doanh nghiệp (toàn thị trường)</p>
+                        </div>
+                      </div>
                       <div className="mt-2 pt-2 border-t border-border/50">
                         <p><strong>💡 Cách sử dụng:</strong> Hover chuột lên các cột để xem chi tiết score range. </p>
                       </div>
@@ -1166,10 +1208,16 @@ export default function CompanyRating() {
                     <Card key={`tier-${index}`}>
                       <CardHeader>
                         <CardTitle className="text-lg">
-                          {tierData.indicator}: {ratingApi.getIndicatorDescription(tierData.indicator)} - CÁC DOANH NGHIỆP: ({tierData.sector}) {sectorNames[tierData.sector] || `Sector ${tierData.sector}`}
+                          {tierData.sector === "All" 
+                            ? `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)} - TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS`
+                            : `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)} - CÁC DOANH NGHIỆP: (${tierData.sector}) ${sectorNames[tierData.sector] || `Sector ${tierData.sector}`}`
+                          }
                         </CardTitle>
                         <p className="text-sm text-muted-foreground">
-                          Group: {tierData.group_label} | Method: {tierData.method.label} ({tierData.method.mode})
+                          {tierData.sector === "All" 
+                            ? `Method: ${tierData.method.label} (${tierData.method.mode})`
+                            : `Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})`
+                          }
                         </p>
                       </CardHeader>
                       <CardContent>
