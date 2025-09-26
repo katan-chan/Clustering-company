@@ -5,6 +5,7 @@ import ScatterPlot from "@/components/scatter-plot";
 import TestRealData from "@/components/test-real-data";
 import OptimalKChart from "@/components/optimal-k-chart";
 import CompanyRating from "@/components/company-rating";
+import CompanyScoring from "@/pages/company-scoring";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -139,6 +140,7 @@ export default function ClusteringPage() {
                 <TabsTrigger value="test-data">Test Real Data</TabsTrigger>
                 <TabsTrigger value="optimal-k">Optimal K-Value</TabsTrigger>
                 <TabsTrigger value="company-rating">Company Rating</TabsTrigger>
+                <TabsTrigger value="company-scoring">Company Scoring</TabsTrigger>
               </TabsList>
             </div>
             <TabsContent value="cluster-visualization" className="flex-1 p-4 lg:p-6">
@@ -152,6 +154,9 @@ export default function ClusteringPage() {
             </TabsContent>
             <TabsContent value="company-rating" className="flex-1 p-0">
               <CompanyRating />
+            </TabsContent>
+            <TabsContent value="company-scoring" className="flex-1 p-0">
+              <CompanyScoring />
             </TabsContent>
           </Tabs>
         </div>

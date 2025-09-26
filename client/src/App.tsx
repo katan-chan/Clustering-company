@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import ClusteringPage from "@/pages/clustering";
 import MockTestPage from "@/pages/mock-test";
 import CompanyRatingPage from "@/pages/company-rating";
+import CompanyScoringPage from "@/pages/company-scoring";
 
 function Router() {
   return (
@@ -14,6 +15,7 @@ function Router() {
       <Route path="/" component={ClusteringPage} />
       <Route path="/mock-test" component={MockTestPage} />
       <Route path="/company-rating" component={CompanyRatingPage} />
+      <Route path="/company-scoring" component={CompanyScoringPage} />
       <Route component={NotFound} />
     </Switch>
   );

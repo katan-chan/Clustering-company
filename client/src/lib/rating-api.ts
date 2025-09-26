@@ -11,14 +11,21 @@ interface IndicatorsResponse {
   indicators: { [key: string]: string };
 }
 
+// Updated interfaces for new API format
 interface TierRequest {
+  folder?: string;
   sector: string;
-  group_label: number;
-  indicator: string;
+  cluster_label?: number;
+  indicator: string | (string | string[])[]; // Support both single and list spec
+  k?: number;
+  writing_mode?: boolean;
 }
 
 interface TierAllRequest {
-  indicator: string;
+  folder?: string;
+  indicator: string | (string | string[])[]; // Support both single and list spec
+  k?: number;
+  writing_mode?: boolean;
 }
 
 interface Tier {
@@ -27,17 +34,19 @@ interface Tier {
   count: number;
 }
 
+// Response for single indicator
 interface TierResponse {
-  group_label: number;
+  group_label?: number;
   indicator: string;
   method: {
     label: string;
     mode: string;
   };
-  sector: string;
+  sector?: string;
   tiers: Tier[];
 }
 
+// Response for single indicator (all data)
 interface TierAllResponse {
   indicator: string;
   method: {
@@ -45,6 +54,20 @@ interface TierAllResponse {
     mode: string;
   };
   tiers: Tier[];
+}
+
+// Response for list spec (multiple indicators/groups)
+interface TierGroupResponse {
+  [key: string]: {
+    indicator: string;
+    method: {
+      label: string;
+      mode: string;
+    };
+    sector?: string;
+    group_label?: number;
+    tiers: Tier[];
+  };
 }
 
 interface CompanyDetailRequest {
@@ -61,6 +84,34 @@ interface CompanyDetail {
   tier: string;
   indicator: string;
   risk_level: string;
+}
+
+// Scoring request for individual company
+interface ScoringCompany {
+  taxcode: string;
+  sector_unique_id: string;
+  features: { [key: string]: number };
+  yearreport: number;
+  length_report: number;
+}
+
+// New scoring request format with companies array
+interface ScoringRequest {
+  companies: ScoringCompany[];
+}
+
+// New response format from updated API
+interface ScoringResponse {
+  cluster_label: number;
+  length_report: number;
+  scores: Array<{
+    indicator: string;
+    tier: string;
+  }>;
+  sector: string;
+  sector_unique_id: string;
+  taxcode: string;
+  yearreport: number;
 }
 
 class RatingApi {
@@ -181,7 +232,7 @@ class RatingApi {
   async getTiers(
     request: TierRequest,
     config: RatingConfig,
-  ): Promise<TierResponse> {
+  ): Promise<TierResponse | TierGroupResponse> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -239,7 +290,7 @@ class RatingApi {
   async getTiersAll(
     request: TierAllRequest,
     config: RatingConfig,
-  ): Promise<TierAllResponse> {
+  ): Promise<TierAllResponse | TierGroupResponse> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -354,6 +405,84 @@ class RatingApi {
     }
   }
 
+  async getScoring(
+    request: ScoringRequest,
+    config: RatingConfig,
+  ): Promise<ScoringResponse[]> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const url = `${config.endpoint}/score`;
+      console.log(`🔄 Calling Scoring API: ${url}`);
+      
+      // Use companies format directly
+      console.log(`📋 Request payload (companies format):`, request);
+
+      const response = await fetch(url, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Scoring API Error Response:`, errorText);
+        throw new Error(
+          `HTTP error! status: ${response.status}, body: ${errorText}`,
+        );
+      }
+
+      const responseText = await response.text();
+      console.log(`✅ Raw scoring response:`, responseText);
+      
+      // Try to parse JSON
+      let scoringData;
+      try {
+        scoringData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error(`❌ Failed to parse response JSON:`, parseError);
+        throw new Error(`Invalid JSON response from API: ${responseText.substring(0, 200)}...`);
+      }
+      
+      console.log(`✅ Parsed scoring data:`, scoringData);
+      
+      // Ensure response is an array
+      if (!Array.isArray(scoringData)) {
+        console.error(`❌ Response is not an array:`, typeof scoringData, scoringData);
+        throw new Error(`Expected array response, got ${typeof scoringData}`);
+      }
+
+      return scoringData as ScoringResponse[];
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          throw new Error(`Timeout: Scoring API không phản hồi sau 15 giây`);
+        }
+        if (
+          error.message.includes("fetch") ||
+          error.message.includes("NetworkError") ||
+          error.message.includes("TypeError")
+        ) {
+          throw new Error(
+            `Không thể kết nối đến Scoring API: ${config.endpoint}/score`,
+          );
+        }
+      }
+      throw error;
+    }
+  }
+
   async testConnection(config: RatingConfig): Promise<boolean> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -413,7 +542,11 @@ export type {
   TierAllRequest,
   TierResponse,
   TierAllResponse,
+  TierGroupResponse,
   CompanyDetail,
   CompanyDetailRequest,
+  ScoringCompany,
+  ScoringRequest,
+  ScoringResponse,
   Tier,
 };

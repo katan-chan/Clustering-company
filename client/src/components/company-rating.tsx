@@ -8,14 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { Download, Search, Wifi, WifiOff } from "lucide-react";
+import { Download, Search, Wifi, WifiOff, Plus, Minus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Plotly from 'plotly.js-dist';
-import { ratingApi, type RatingConfig, type TierResponse, type TierAllResponse, type CompanyDetail, type Tier } from "@/lib/rating-api";
+import { ratingApi, type RatingConfig, type TierResponse, type TierAllResponse, type TierGroupResponse, type CompanyDetail, type Tier } from "@/lib/rating-api";
 
 const apiSchema = z.object({
   endpoint: z.string().url("Please enter a valid URL"),
@@ -58,14 +58,17 @@ export default function CompanyRating() {
   
   // State for controls
   const [indicators, setIndicators] = useState<string[]>([]);
+  const [indicatorDescriptions, setIndicatorDescriptions] = useState<{ [key: string]: string }>({});
+  const [analysisMode, setAnalysisMode] = useState<"individual" | "group">("individual");
   const [selectedIndicators, setSelectedIndicators] = useState<string[]>([]);
+  const [indicatorGroups, setIndicatorGroups] = useState<string[][]>([]); // For group mode
   const [selectedSector, setSelectedSector] = useState<string>("A");
   const [selectedGroupLabel, setSelectedGroupLabel] = useState<number>(0);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
   const [companySearch, setCompanySearch] = useState<string>("");
   
-  // State for data
-  const [tierDataList, setTierDataList] = useState<TierResponse[]>([]);
+  // State for data - updated to handle both single and group responses
+  const [tierDataList, setTierDataList] = useState<(TierResponse | TierAllResponse)[]>([]);
   const [companyDetails, setCompanyDetails] = useState<CompanyDetail[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -79,10 +82,12 @@ export default function CompanyRating() {
   
   // Load tier data when parameters change
   useEffect(() => {
-    if (selectedIndicators.length > 0 && selectedSector && ratingConfig.endpoint) {
+    if (analysisMode === "individual" && selectedIndicators.length > 0 && selectedSector && ratingConfig.endpoint) {
+      loadTierData();
+    } else if (analysisMode === "group" && indicatorGroups.length > 0 && selectedSector && ratingConfig.endpoint) {
       loadTierData();
     }
-  }, [selectedIndicators, selectedSector, selectedSector === "All" ? null : selectedGroupLabel, ratingConfig.endpoint]);
+  }, [analysisMode, selectedIndicators, indicatorGroups, selectedSector, selectedSector === "All" ? null : selectedGroupLabel, ratingConfig.endpoint]);
 
   // Update charts when tier data changes
   useEffect(() => {
@@ -141,153 +146,7 @@ export default function CompanyRating() {
       setIndicators([]);
     }
   };
-  
-  const testApiFormat = async () => {
-    if (!ratingConfig.endpoint) {
-      toast({
-        title: "No API Endpoint",
-        description: "Please enter an API endpoint first",
-        variant: "destructive",
-      });
-      return;
-    }
 
-    try {
-      const testUrl = `${ratingConfig.endpoint}/indicator`;
-      console.log("🧪 Testing API format:", testUrl);
-      
-      const response = await fetch(testUrl, {
-        method: "GET",
-        mode: "cors",
-        headers: {
-          Accept: "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-      });
-
-      const rawData = await response.json();
-      
-      console.log("🧪 Raw API response:", rawData);
-      console.log("🧪 Response type:", typeof rawData);
-      console.log("🧪 Is array:", Array.isArray(rawData));
-      
-      if (typeof rawData === 'object' && !Array.isArray(rawData)) {
-        console.log("🧪 Object keys:", Object.keys(rawData));
-        if (rawData.indicators && typeof rawData.indicators === 'object') {
-          const indicatorEntries = Object.entries(rawData.indicators);
-          console.log("🧪 Indicators found:", indicatorEntries.length);
-          console.log("🧪 Sample indicators:", indicatorEntries.slice(0, 3));
-        }
-      }
-      
-      let statusMessage = `Response type: ${typeof rawData}\nIs array: ${Array.isArray(rawData)}`;
-      if (rawData.indicators && typeof rawData.indicators === 'object') {
-        const count = Object.keys(rawData.indicators).length;
-        statusMessage += `\nIndicators found: ${count}\nFormat: ✅ Compatible`;
-      } else {
-        statusMessage += `\nFormat: ❌ Needs adjustment`;
-      }
-      
-      toast({
-        title: "API Format Test",
-        description: `${statusMessage}\nCheck console for details`,
-        variant: rawData.indicators ? "default" : "destructive",
-      });
-    } catch (error) {
-      console.error("🧪 API test failed:", error);
-      toast({
-        title: "API Test Failed",
-        description: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        variant: "destructive",
-      });
-    }
-  };
-
-  const testTiersApi = async () => {
-    if (!ratingConfig.endpoint) {
-      toast({
-        title: "No API Endpoint",
-        description: "Please enter an API endpoint first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      console.log("🧪 Testing /tiers/cluster API...");
-      
-      // Test with different parameter formats
-      const testRequests = [
-        {
-          sector: "A",
-          group_label: 1,
-          indicator: "STD_RTD13"
-        },
-        {
-          sector: "A", 
-          cluster_label: 1,
-          indicator: "STD_RTD13"
-        },
-        {
-          sector: "A",
-          group_label: 1,
-          cluster_label: 1,
-          indicator: "STD_RTD13"
-        }
-      ];
-
-      for (let i = 0; i < testRequests.length; i++) {
-        const testPayload = testRequests[i];
-        console.log(`🧪 Test ${i + 1}/3 - Payload:`, testPayload);
-        
-        try {
-          const response = await fetch(`${ratingConfig.endpoint}/tiers/cluster`, {
-            method: "POST",
-            mode: "cors",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-              "ngrok-skip-browser-warning": "true",
-            },
-            body: JSON.stringify(testPayload),
-          });
-
-          const responseText = await response.text();
-          console.log(`🧪 Test ${i + 1} Response:`, { 
-            status: response.status, 
-            statusText: response.statusText,
-            body: responseText 
-          });
-
-          if (response.ok) {
-            const data = JSON.parse(responseText);
-            toast({
-              title: `Test ${i + 1} Success`,
-              description: `Found working format with ${Object.keys(testPayload).join(', ')}`,
-              variant: "default",
-            });
-            console.log(`✅ Test ${i + 1} succeeded with data:`, data);
-            return; // Stop on first success
-          }
-        } catch (error) {
-          console.error(`❌ Test ${i + 1} failed:`, error);
-        }
-      }
-      
-      toast({
-        title: "All Tier API Tests Failed",
-        description: "None of the parameter formats worked. Check console for details.",
-        variant: "destructive",
-      });
-    } catch (error) {
-      console.error("🧪 Tier API test failed:", error);
-      toast({
-        title: "Tier API Test Failed",
-        description: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        variant: "destructive",
-      });
-    }
-  };
 
   const loadMockTierData = () => {
     const mockTierData: TierResponse = {
@@ -358,7 +217,7 @@ export default function CompanyRating() {
     
     // Ensure sector matches
     if (selectedSector !== mockTierData.sector) {
-      setSelectedSector(mockTierData.sector);
+      setSelectedSector(mockTierData.sector || "All");
     }
     
     // Update tier data and charts
@@ -377,22 +236,43 @@ export default function CompanyRating() {
       console.log("📡 Fetching indicators from API...");
       console.log("🔗 API Endpoint:", ratingConfig.endpoint);
       
-      const indicatorList = await ratingApi.getIndicators(ratingConfig);
+      const indicatorResponse = await ratingApi.getIndicators(ratingConfig);
       
-      console.log("📊 Raw indicators response:", indicatorList);
-      console.log("📊 Response type:", typeof indicatorList);
-      console.log("📊 Is array:", Array.isArray(indicatorList));
+      console.log("📊 Raw indicators response:", indicatorResponse);
+      console.log("📊 Response type:", typeof indicatorResponse);
       
-      if (!Array.isArray(indicatorList)) {
+      // Handle both old format (array) and new format (object with descriptions)
+      if (typeof indicatorResponse === 'object' && indicatorResponse && 'indicators' in indicatorResponse) {
+        // New format: { indicators: { "STD_RTD146": "FFO / Nợ vay", ... } }
+        const descriptions = indicatorResponse.indicators as { [key: string]: string };
+        const indicatorList = Object.keys(descriptions);
+        
+        setIndicators(indicatorList);
+        setIndicatorDescriptions(descriptions);
+        
+        if (indicatorList.length > 0) {
+          setSelectedIndicators([indicatorList[0]]);
+          console.log(`✅ Loaded ${indicatorList.length} indicators with descriptions, selected: ${indicatorList[0]}`);
+        }
+      } else if (Array.isArray(indicatorResponse)) {
+        // Old format: ["STD_RTD146", "STD_RTD71", ...]
+        setIndicators(indicatorResponse);
+        setIndicatorDescriptions({}); // No descriptions available
+        
+        if (indicatorResponse.length > 0) {
+          setSelectedIndicators([indicatorResponse[0]]);
+          console.log(`✅ Loaded ${indicatorResponse.length} indicators (old format), selected: ${indicatorResponse[0]}`);
+        }
+      } else {
         console.error("❌ Invalid indicators format:", {
-          type: typeof indicatorList,
-          isArray: Array.isArray(indicatorList),
-          value: indicatorList
+          type: typeof indicatorResponse,
+          isArray: Array.isArray(indicatorResponse),
+          value: indicatorResponse
         });
-        throw new Error(`Invalid indicators format: expected array, got ${typeof indicatorList}. Response: ${JSON.stringify(indicatorList)}`);
+        throw new Error(`Invalid indicators format: expected array or object with 'indicators' key, got ${typeof indicatorResponse}. Response: ${JSON.stringify(indicatorResponse)}`);
       }
       
-      if (indicatorList.length === 0) {
+      if (indicators.length === 0) {
         console.warn("⚠️ API returned empty indicators list");
         toast({
           title: "No Indicators Available", 
@@ -400,15 +280,10 @@ export default function CompanyRating() {
           variant: "destructive",
         });
       }
-      
-      setIndicators(indicatorList);
-      if (indicatorList.length > 0) {
-        setSelectedIndicators([indicatorList[0]]);
-        console.log(`✅ Loaded ${indicatorList.length} indicators, selected: ${indicatorList[0]}`);
-      }
     } catch (error) {
       console.error("❌ Failed to load indicators:", error);
       setIndicators([]);
+      setIndicatorDescriptions({});
       setSelectedIndicators([]);
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error loading indicators";
@@ -440,7 +315,7 @@ export default function CompanyRating() {
       } else if (errorMessage.includes("Invalid indicators format")) {
         userFriendlyMessage = "API returned unexpected data format";
         possibleCauses = [
-          "• API should return array of strings",
+          "• API should return array of strings or object with 'indicators' key",
           "• Current response format not supported",
           "• Contact API provider for correct format"
         ];
@@ -465,14 +340,22 @@ export default function CompanyRating() {
   };
   
   const loadTierData = async () => {
-    if (selectedIndicators.length === 0) {
+    if (analysisMode === "individual" && selectedIndicators.length === 0) {
       console.warn("⚠️ No indicators selected for tier data loading");
+      setTierDataList([]);
+      return;
+    }
+    
+    if (analysisMode === "group" && indicatorGroups.length === 0) {
+      console.warn("⚠️ No indicator groups defined for tier data loading");
       setTierDataList([]);
       return;
     }
 
     console.log("🔄 Loading tier data for:", {
-      indicators: selectedIndicators,
+      mode: analysisMode,
+      indicators: analysisMode === "individual" ? selectedIndicators : "groups",
+      groups: analysisMode === "group" ? indicatorGroups : undefined,
       sector: selectedSector,
       groupLabel: selectedGroupLabel,
       endpoint: ratingConfig.endpoint
@@ -483,60 +366,83 @@ export default function CompanyRating() {
       if (selectedSector === "All") {
         // Use /tiers/all API for All Sectors
         console.log("🌍 Loading tier data for All Sectors");
-        const tierResponses = await Promise.all(
-          selectedIndicators.map(async (indicator) => {
-            console.log(`📊 Fetching tier data for all sectors, indicator: ${indicator}`);
-            const response = await ratingApi.getTiersAll({
-              indicator: indicator,
-            }, ratingConfig);
-            console.log(`✅ Tier All data received for ${indicator}:`, response);
-            
-            // Convert TierAllResponse to TierResponse format for consistency
-            const normalizedResponse: TierResponse = {
-              group_label: -1, // Special value to indicate "All Sectors"
-              indicator: response.indicator,
-              method: response.method,
-              sector: "All",
-              tiers: response.tiers
-            };
-            
-            return normalizedResponse;
-          })
-        );
         
-        console.log("🎯 All tier responses received (All Sectors):", tierResponses);
-        setTierDataList(tierResponses);
+        let indicator;
+        if (analysisMode === "individual") {
+          // For individual mode, send selected indicators as list
+          indicator = selectedIndicators.length === 1 ? selectedIndicators[0] : selectedIndicators;
+        } else {
+          // For group mode, send indicator groups as list spec
+          indicator = [...selectedIndicators, ...indicatorGroups];
+        }
+        
+        const response = await ratingApi.getTiersAll({
+          indicator: indicator,
+          k: 8
+        }, ratingConfig);
+        
+        console.log("✅ Tier All data received:", response);
+        
+        // Handle both single and group responses
+        if ('indicator' in response && typeof response.indicator === 'string') {
+          // Single indicator response (TierAllResponse)
+          const singleResponse = response as TierAllResponse;
+          const normalizedResponse: TierResponse = {
+            indicator: singleResponse.indicator,
+            method: singleResponse.method,
+            sector: "All",
+            tiers: singleResponse.tiers
+          };
+          setTierDataList([normalizedResponse]);
+        } else {
+          // Group response (TierGroupResponse) - convert to array format
+          const groupResponse = response as TierGroupResponse;
+          const normalizedResponses: TierResponse[] = Object.entries(groupResponse).map(([label, data]) => ({
+            group_label: -1,
+            indicator: data.indicator,
+            method: data.method,
+            sector: "All",
+            tiers: data.tiers,
+            label: label // Add label for group identification
+          }));
+          setTierDataList(normalizedResponses);
+        }
       } else {
         // Use existing /tiers/cluster API for specific sector
         console.log(`🏢 Loading tier data for specific sector: ${selectedSector}`);
-        const tierResponses = await Promise.all(
-          selectedIndicators.map(async (indicator) => {
-            console.log(`📊 Fetching tier data for indicator: ${indicator}`);
-            const response = await ratingApi.getTiers({
-              sector: selectedSector,
-              group_label: selectedGroupLabel,
-              indicator: indicator,
-            }, ratingConfig);
-            console.log(`✅ Tier data received for ${indicator}:`, response);
-            return response;
-          })
-        );
         
-        console.log("🎯 All tier responses received:", tierResponses);
+        let indicator;
+        if (analysisMode === "individual") {
+          indicator = selectedIndicators.length === 1 ? selectedIndicators[0] : selectedIndicators;
+        } else {
+          indicator = [...selectedIndicators, ...indicatorGroups];
+        }
         
-        // Validate tier responses
-        tierResponses.forEach((response, index) => {
-          console.log(`🔍 Validating response ${index}:`, {
-            indicator: response.indicator,
-            sector: response.sector,
-            groupLabel: response.group_label,
-            method: response.method,
-            tiersCount: response.tiers?.length || 0,
-            sampleTier: response.tiers?.[0]
-          });
-        });
+        const response = await ratingApi.getTiers({
+          sector: selectedSector,
+          cluster_label: selectedGroupLabel,
+          indicator: indicator,
+          k: 8
+        }, ratingConfig);
         
-        setTierDataList(tierResponses);
+        console.log("✅ Tier cluster data received:", response);
+        
+        // Handle both single and group responses
+        if ('indicator' in response && 'tiers' in response) {
+          // Single indicator response
+          setTierDataList([response as TierResponse]);
+        } else {
+          // Group response - convert to array format
+          const normalizedResponses: TierResponse[] = Object.entries(response as TierGroupResponse).map(([label, data]) => ({
+            group_label: data.group_label || selectedGroupLabel,
+            indicator: data.indicator,
+            method: data.method,
+            sector: data.sector || selectedSector,
+            tiers: data.tiers,
+            label: label // Add label for group identification
+          }));
+          setTierDataList(normalizedResponses);
+        }
       }
       // updateCharts will be called automatically by useEffect when tierDataList changes
     } catch (error) {
@@ -674,12 +580,36 @@ export default function CompanyRating() {
         }))
       };
       
+      // Create chart title with proper indicator descriptions
+      let chartTitle = "";
+      const description = getIndicatorDescription(tierData.indicator);
+      
+      // Check if this is a group indicator (contains +)
+      const isGroupIndicator = tierData.indicator.includes('+');
+      
+      if (isGroupIndicator) {
+        // For group indicators, show each component
+        const components = tierData.indicator.split('+');
+        const componentDescriptions = components.map(comp => {
+          const desc = getIndicatorDescription(comp.trim());
+          return desc ? `${comp.trim()} – ${desc}` : comp.trim();
+        }).join('<br>• ');
+        
+        chartTitle = tierData.sector === "All" 
+          ? `GROUP: ${tierData.indicator}<br><small>• ${componentDescriptions}</small><br><sub>TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS</sub><br><sub>Method: ${tierData.method.label} (${tierData.method.mode})</sub>`
+          : `GROUP: ${tierData.indicator}<br><small>• ${componentDescriptions}</small><br><sub>CÁC DOANH NGHIỆP: (${tierData.sector || ''}) ${(tierData.sector && sectorNames[tierData.sector]) || `Sector ${tierData.sector}`}</sub><br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`;
+      } else {
+        // For individual indicators
+        const displayTitle = description ? `${tierData.indicator} – ${description}` : tierData.indicator;
+        chartTitle = tierData.sector === "All" 
+          ? `${displayTitle}<br><sub>TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS</sub><br><sub>Method: ${tierData.method.label} (${tierData.method.mode})</sub>`
+          : `${displayTitle}<br><sub>CÁC DOANH NGHIỆP: (${tierData.sector || ''}) ${(tierData.sector && sectorNames[tierData.sector]) || `Sector ${tierData.sector}`}</sub><br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`;
+      }
+      
       const layout = {
         title: {
-          text: tierData.sector === "All" 
-            ? `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)}<br><sub>TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS</sub><br><sub>Method: ${tierData.method.label} (${tierData.method.mode})</sub>`
-            : `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)}<br><sub>CÁC DOANH NGHIỆP: (${tierData.sector}) ${sectorNames[tierData.sector] || `Sector ${tierData.sector}`}</sub><br><sub>Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})</sub>`,
-          font: { size: 16 }
+          text: chartTitle,
+          font: { size: 14 }
         },
         xaxis: { 
           title: 'Rating Tiers with Score Ranges (T1=Best → T8=Worst)', 
@@ -714,7 +644,7 @@ export default function CompanyRating() {
               console.log(`✅ Chart created successfully for ${tierData.indicator}`);
               
               // Add click handler after chart is created
-              chartDiv.on('plotly_click', (clickData: any) => {
+              (chartDiv as any).on('plotly_click', (clickData: any) => {
                 if (clickData.points && clickData.points[0]) {
                   const tierIndex = clickData.points[0].pointIndex;
                   const tierInfo = tierData.tiers[tierIndex];
@@ -728,7 +658,7 @@ export default function CompanyRating() {
                 }
               });
             })
-            .catch((plotError) => {
+            .catch((plotError: any) => {
               console.error(`❌ Failed to create chart for ${tierData.indicator}:`, plotError);
               chartDiv.innerHTML = `<div class="flex items-center justify-center h-full text-red-500">
                 <div class="text-center">
@@ -789,6 +719,56 @@ export default function CompanyRating() {
   
   const removeCompany = (taxcode: string) => {
     setSelectedCompanies(selectedCompanies.filter(c => c !== taxcode));
+  };
+  
+  // Helper functions for indicator groups
+  const addIndicatorGroup = () => {
+    setIndicatorGroups([...indicatorGroups, []]);
+  };
+  
+  const removeIndicatorGroup = (groupIndex: number) => {
+    setIndicatorGroups(indicatorGroups.filter((_, index) => index !== groupIndex));
+  };
+  
+  const addIndicatorToGroup = (groupIndex: number, indicator: string) => {
+    const updatedGroups = [...indicatorGroups];
+    if (!updatedGroups[groupIndex].includes(indicator)) {
+      updatedGroups[groupIndex] = [...updatedGroups[groupIndex], indicator];
+      setIndicatorGroups(updatedGroups);
+    }
+  };
+  
+  const removeIndicatorFromGroup = (groupIndex: number, indicator: string) => {
+    const updatedGroups = [...indicatorGroups];
+    updatedGroups[groupIndex] = updatedGroups[groupIndex].filter(ind => ind !== indicator);
+    setIndicatorGroups(updatedGroups);
+  };
+  
+  // Get indicator description with fallback
+  const getIndicatorDescription = (indicator: string): string => {
+    if (indicatorDescriptions[indicator]) {
+      return indicatorDescriptions[indicator];
+    }
+    // Fallback to ratingApi method if available
+    return ratingApi.getIndicatorDescription(indicator);
+  };
+  
+  // Format indicator display name
+  const formatIndicatorDisplay = (indicator: string): string => {
+    const description = getIndicatorDescription(indicator);
+    return description ? `${indicator} – ${description}` : indicator;
+  };
+  
+  // Format group display name
+  const formatGroupDisplay = (group: string[], groupIndex: number): string => {
+    if (group.length === 0) return `Group ${groupIndex + 1} (empty)`;
+    const indicators = group.join(" + ");
+    const descriptions = group.map(ind => getIndicatorDescription(ind)).filter(Boolean);
+    
+    if (descriptions.length > 0) {
+      return `Group ${groupIndex + 1}: ${indicators}\n${descriptions.map(desc => `• ${desc}`).join('\n')}`;
+    }
+    return `Group ${groupIndex + 1}: ${indicators}`;
   };
   
   const exportToCSV = () => {
@@ -889,26 +869,6 @@ export default function CompanyRating() {
                   Connect to API
                 </Button>
                 
-                {/* Test API Format Button */}
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={testApiFormat}
-                >
-                  🧪 Test API Format
-                </Button>
-                
-                {/* Test Tiers API Button */}
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={testTiersApi}
-                >
-                  🔬 Test Tiers API
-                </Button>
-                
                 {/* Debug: Mock tier data for testing */}
                 {connectionStatus === "connected" && (
                   <Button 
@@ -928,9 +888,52 @@ export default function CompanyRating() {
           
           {connectionStatus === "connected" && (
             <>
-              {/* Indicator Selection */}
-              <div className="space-y-2">
-                <Label>Financial Indicators (Multi-select)</Label>
+              {/* Analysis Mode Selection */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium">Analysis Mode</h3>
+                
+                <div className="flex space-x-2">
+                  <Button
+                    variant={analysisMode === "individual" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setAnalysisMode("individual");
+                      setTierDataList([]); // Clear existing data when switching modes
+                    }}
+                    className="flex-1"
+                  >
+                    📊 Individual Indicators
+                  </Button>
+                  <Button
+                    variant={analysisMode === "group" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setAnalysisMode("group");
+                      setTierDataList([]); // Clear existing data when switching modes
+                    }}
+                    className="flex-1"
+                  >
+                    📈 Indicator Groups
+                  </Button>
+                </div>
+                
+                <div className="text-xs text-muted-foreground p-2 bg-muted/30 rounded">
+                  {analysisMode === "individual" ? (
+                    <p><strong>Individual Mode:</strong> Analyze each financial indicator separately. Select multiple indicators to compare their tier distributions.</p>
+                  ) : (
+                    <p><strong>Group Mode:</strong> Create groups of indicators for combined analysis. Each group will be treated as a composite indicator.</p>
+                  )}
+                </div>
+              </div>
+              
+              <Separator />
+              
+              {analysisMode === "individual" ? (
+                // Individual Indicator Selection
+                <>
+                  {/* Indicator Selection */}
+                  <div className="space-y-2">
+                    <Label>Financial Indicators (Multi-select)</Label>
                 {indicators.length === 0 ? (
                   <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-md">
                     <p className="text-sm text-yellow-700">
@@ -984,8 +987,8 @@ export default function CompanyRating() {
                             <label htmlFor={`indicator-${indicator}`} className="text-sm font-mono cursor-pointer block">
                               {indicator}
                             </label>
-                            <p className="text-xs text-muted-foreground truncate" title={ratingApi.getIndicatorDescription(indicator)}>
-                              {ratingApi.getIndicatorDescription(indicator)}
+                            <p className="text-xs text-muted-foreground truncate" title={getIndicatorDescription(indicator)}>
+                              {getIndicatorDescription(indicator)}
                             </p>
                           </div>
                         </div>
@@ -999,6 +1002,147 @@ export default function CompanyRating() {
                   </div>
                 )}
               </div>
+                </>
+              ) : (
+                // Group Indicator Selection
+                <>
+                  {/* Indicator Groups */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Indicator Groups</Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={addIndicatorGroup}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Group
+                      </Button>
+                    </div>
+                    
+                    {indicators.length === 0 ? (
+                      <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-md">
+                        <p className="text-sm text-yellow-700">
+                          ⚠️ No indicators available for grouping.
+                        </p>
+                      </div>
+                    ) : indicatorGroups.length === 0 ? (
+                      <div className="p-3 border border-gray-200 bg-gray-50 rounded-md">
+                        <p className="text-sm text-gray-700 text-center">
+                          No indicator groups created yet.<br/>
+                          <span className="text-xs">Click "Add Group" to create your first indicator group.</span>
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {indicatorGroups.map((group, groupIndex) => (
+                          <Card key={groupIndex} className="p-3">
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="text-sm font-medium">Group {groupIndex + 1}</h4>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => removeIndicatorGroup(groupIndex)}
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            
+                            {/* Indicator selection for this group */}
+                            <div className="space-y-2">
+                              <Select
+                                value=""
+                                onValueChange={(indicator) => addIndicatorToGroup(groupIndex, indicator)}
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue placeholder="Add indicator to group..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {indicators
+                                    .filter(indicator => !group.includes(indicator))
+                                    .map(indicator => (
+                                      <SelectItem key={indicator} value={indicator}>
+                                        <div className="text-left">
+                                          <div className="font-mono text-xs">{indicator}</div>
+                                          <div className="text-xs text-muted-foreground truncate">
+                                            {getIndicatorDescription(indicator)}
+                                          </div>
+                                        </div>
+                                      </SelectItem>
+                                    ))
+                                  }
+                                </SelectContent>
+                              </Select>
+                              
+                              {/* Show selected indicators in this group */}
+                              {group.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                  {group.map(indicator => (
+                                    <Badge 
+                                      key={indicator} 
+                                      variant="secondary" 
+                                      className="cursor-pointer text-xs"
+                                      onClick={() => removeIndicatorFromGroup(groupIndex, indicator)}
+                                      title={`${indicator} - ${getIndicatorDescription(indicator)}\nClick to remove`}
+                                    >
+                                      {indicator} ×
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                              
+                              <div className="text-xs text-muted-foreground">
+                                {group.length} indicators in this group
+                              </div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Group summary */}
+                    <div className="text-xs text-muted-foreground p-2 bg-muted/30 rounded">
+                      <p><strong>Groups Summary:</strong> {indicatorGroups.length} groups created</p>
+                      <p><strong>Total Indicators:</strong> {indicatorGroups.flat().length} indicators assigned to groups</p>
+                    </div>
+                    
+                    {/* Individual indicators for group mode */}
+                    <div className="space-y-2">
+                      <Label className="text-xs">Individual Indicators (also analyzed separately)</Label>
+                      <div className="max-h-32 overflow-y-auto space-y-1 border rounded-md p-2">
+                        {indicators.map(indicator => (
+                          <div key={indicator} className="flex items-start space-x-2 p-1 hover:bg-muted/50 rounded">
+                            <input
+                              type="checkbox"
+                              id={`group-indicator-${indicator}`}
+                              checked={selectedIndicators.includes(indicator)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedIndicators([...selectedIndicators, indicator]);
+                                } else {
+                                  setSelectedIndicators(selectedIndicators.filter(i => i !== indicator));
+                                }
+                              }}
+                              className="rounded border-gray-300 mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <label htmlFor={`group-indicator-${indicator}`} className="text-xs font-mono cursor-pointer block">
+                                {indicator}
+                              </label>
+                              <p className="text-xs text-muted-foreground truncate" title={getIndicatorDescription(indicator)}>
+                                {getIndicatorDescription(indicator)}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedIndicators.length} individual indicators selected
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
               
               {/* Sector Selection */}
               <div className="space-y-2">
@@ -1208,16 +1352,51 @@ export default function CompanyRating() {
                     <Card key={`tier-${index}`}>
                       <CardHeader>
                         <CardTitle className="text-lg">
-                          {tierData.sector === "All" 
-                            ? `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)} - TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS`
-                            : `${tierData.indicator}: ${ratingApi.getIndicatorDescription(tierData.indicator)} - CÁC DOANH NGHIỆP: (${tierData.sector}) ${sectorNames[tierData.sector] || `Sector ${tierData.sector}`}`
-                          }
+                          {(() => {
+                            const description = getIndicatorDescription(tierData.indicator);
+                            const isGroupIndicator = tierData.indicator.includes('+');
+                            
+                            if (isGroupIndicator) {
+                              // For group indicators, show group label with components
+                              const sector = 'sector' in tierData ? tierData.sector : "All";
+                              const sectorText = sector === "All" 
+                                ? "TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS"
+                                : `CÁC DOANH NGHIỆP: (${sector}) ${(sector && sectorNames[sector]) || `Sector ${sector}`}`;
+                              return `GROUP: ${tierData.indicator} - ${sectorText}`;
+                            } else {
+                              // For individual indicators
+                              const displayTitle = description ? `${tierData.indicator}: ${description}` : tierData.indicator;
+                              const sector = 'sector' in tierData ? tierData.sector : "All";
+                              return sector === "All" 
+                                ? `${displayTitle} - TẤT CẢ CÁC DOANH NGHIỆP TOÀN BỘ SECTORS`
+                                : `${displayTitle} - CÁC DOANH NGHIỆP: (${sector}) ${(sector && sectorNames[sector]) || `Sector ${sector}`}`;
+                            }
+                          })()}
                         </CardTitle>
                         <p className="text-sm text-muted-foreground">
-                          {tierData.sector === "All" 
-                            ? `Method: ${tierData.method.label} (${tierData.method.mode})`
-                            : `Group: ${tierData.group_label} | Method: ${tierData.method.label} (${tierData.method.mode})`
-                          }
+                          {(() => {
+                            const isGroupIndicator = tierData.indicator.includes('+');
+                            
+                            if (isGroupIndicator) {
+                              // For group indicators, show components breakdown
+                              const components = tierData.indicator.split('+');
+                              const componentDescriptions = components.map(comp => {
+                                const desc = getIndicatorDescription(comp.trim());
+                                return desc ? `${comp.trim()}: ${desc}` : comp.trim();
+                              }).join(' • ');
+                              
+                              const sector = 'sector' in tierData ? tierData.sector : "All";
+                              return sector === "All" 
+                                ? `Components: ${componentDescriptions} | Method: ${tierData.method.label} (${tierData.method.mode})`
+                                : `Components: ${componentDescriptions} | Group: ${('group_label' in tierData) ? tierData.group_label : 'N/A'} | Method: ${tierData.method.label} (${tierData.method.mode})`;
+                            } else {
+                              // For individual indicators
+                              const sector = 'sector' in tierData ? tierData.sector : "All";
+                              return sector === "All" 
+                                ? `Method: ${tierData.method.label} (${tierData.method.mode})`
+                                : `Group: ${('group_label' in tierData) ? tierData.group_label : 'N/A'} | Method: ${tierData.method.label} (${tierData.method.mode})`;
+                            }
+                          })()}
                         </p>
                       </CardHeader>
                       <CardContent>
