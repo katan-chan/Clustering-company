@@ -354,7 +354,7 @@ export default function CompanyScoring() {
         "yearreport": 2022
       }
     ];
-    
+      
     console.log("🎭 Loading mock scoring results:", mockResults);
     setScoringResults(mockResults);
     

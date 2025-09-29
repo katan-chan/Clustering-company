@@ -258,6 +258,16 @@ class RatingApi {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`❌ Tiers API Error Response:`, errorText);
+        
+        // Handle specific int64 serialization error
+        if (errorText.includes("Object of type int64 is not JSON serializable")) {
+          throw new Error(
+            `Backend Data Error: Chỉ số "${request.indicator}" chứa dữ liệu int64 không thể serialize. ` +
+            `Backend cần convert int64 sang int hoặc string trước khi trả về JSON. ` +
+            `Liên hệ API developer để fix lỗi này.`
+          );
+        }
+        
         throw new Error(
           `HTTP error! status: ${response.status}, body: ${errorText}`,
         );
@@ -316,6 +326,16 @@ class RatingApi {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`❌ Tiers All API Error Response:`, errorText);
+        
+        // Handle specific int64 serialization error
+        if (errorText.includes("Object of type int64 is not JSON serializable")) {
+          throw new Error(
+            `Backend Data Error: Chỉ số "${request.indicator}" chứa dữ liệu int64 không thể serialize. ` +
+            `Backend cần convert int64 sang int hoặc string trước khi trả về JSON. ` +
+            `Liên hệ API developer để fix lỗi này.`
+          );
+        }
+        
         throw new Error(
           `HTTP error! status: ${response.status}, body: ${errorText}`,
         );
