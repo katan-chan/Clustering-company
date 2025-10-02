@@ -13,19 +13,16 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ratingApi, type RatingConfig, type ScoringRequest, type ScoringResponse, type ScoringCompany } from "@/lib/rating-api";
+import { getScoring, ratingApi, type RatingConfig, type ScoringRequest, type ScoringResponse, type ScoringCompany, type ScoredCompany } from "@/lib/rating-api";
 
 const apiSchema = z.object({
   endpoint: z.string().url("Please enter a valid URL"),
 });
 
 const scoringSchema = z.object({
-  cluster_label: z.number().min(0, "Cluster label must be >= 0"),
-  length_report: z.number().min(1, "Length report must be >= 1"),
-  sector: z.string().min(1, "Sector is required"),
-  sector_unique_id: z.string().min(1, "Sector unique ID is required"),
   taxcode: z.string().min(1, "Tax code is required"),
-  yearreport: z.number().min(2000, "Year report must be >= 2000").max(2030, "Year report must be <= 2030"),
+  sector_unique_id: z.string().optional(),
+  cluster_label: z.string().optional(),
 });
 
 export default function CompanyScoring() {
@@ -38,47 +35,42 @@ export default function CompanyScoring() {
   const [connectionStatus, setConnectionStatus] = useState<"connected" | "disconnected" | "checking">("disconnected");
   const [indicators, setIndicators] = useState<string[]>([]);
   
+  // Add missing state variables for features and results
+  const [features, setFeatures] = useState<{ [key: string]: string }>({});
+  
   // State for CSV import feature
   const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvData, setCsvData] = useState<any[]>([]);
-  const [csvResults, setCsvResults] = useState<ScoringResponse[]>([]);
+  const [csvData, setCsvData] = useState<ScoringCompany[]>([]);
+  const [csvResults, setCsvResults] = useState<ScoredCompany[]>([]);
   const [csvProcessing, setCsvProcessing] = useState(false);
   const [showCsvResults, setShowCsvResults] = useState(false);
   
-  // State for scoring form
-  const [features, setFeatures] = useState<{ [key: string]: string }>({});
-  const [scoringResults, setScoringResults] = useState<ScoringResponse[]>([]);
+  // State for scoring form - simplified to match new API
+  const [selectedIndicators, setSelectedIndicators] = useState<string[]>([]);
+  const [indicatorWeights, setIndicatorWeights] = useState<{ [key: string]: number }>({});
+  const [indicatorValues, setIndicatorValues] = useState<{ [key: string]: string }>({});
+  const [scoringResults, setScoringResults] = useState<ScoredCompany[]>([]);
   const [loading, setLoading] = useState(false);
-  const [renderError, setRenderError] = useState<string>("");
   
-  // Effect to log scoringResults changes
-  useEffect(() => {
-    console.log("📊 Scoring results updated:", {
-      length: scoringResults.length,
-      data: scoringResults
-    });
-  }, [scoringResults]);
-  
-  // API Configuration Form
-  const apiForm = useForm<z.infer<typeof apiSchema>>({
-    resolver: zodResolver(apiSchema),
-    defaultValues: {
-      endpoint: "",
-    },
-  });
-  
-  // Scoring Form
+  // Scoring Form - updated to match new API
   const scoringForm = useForm<z.infer<typeof scoringSchema>>({
     resolver: zodResolver(scoringSchema),
     defaultValues: {
-      cluster_label: 0,
-      length_report: 5,
-      sector: "G",
-      sector_unique_id: "46413",
       taxcode: "0100100008",
-      yearreport: 2022,
+      sector_unique_id: "G",
+      cluster_label: "",
     },
   });
+
+  // API Configuration Form
+  const apiForm = useForm<{ endpoint: string }>({
+    defaultValues: {
+      endpoint: ""
+    }
+  });
+
+  // Add missing state variables
+  const [renderError, setRenderError] = useState<string>("");
   
   const onApiConfigSubmit = async (data: { endpoint: string }) => {
     setRatingConfig({ endpoint: data.endpoint });
@@ -86,24 +78,18 @@ export default function CompanyScoring() {
     if (data.endpoint) {
       setConnectionStatus("checking");
       try {
-        console.log("🔄 Testing connection to:", data.endpoint);
-        const connected = await ratingApi.testConnection({ endpoint: data.endpoint });
+        console.log("🔄 Connecting to API and loading indicators:", data.endpoint);
+        // Chỉ cần gọi loadIndicators - nếu thành công thì API đã kết nối
+        await loadIndicators();
         
-        if (connected) {
-          console.log("✅ Connection test successful");
-          setConnectionStatus("connected");
-          
-          console.log("🔄 Loading indicators...");
-          await loadIndicators();
-          
-          toast({
-            title: "Connection Successful",
-            description: "Successfully connected to Rating API and loaded indicators",
-            variant: "default",
-          });
-        } else {
-          throw new Error("Connection test failed - API endpoint not responding properly");
-        }
+        // Chỉ set connected khi loadIndicators thành công
+        setConnectionStatus("connected");
+        
+        toast({
+          title: "Connection Successful",
+          description: "Successfully connected to Rating API and loaded indicators",
+          variant: "default",
+        });
       } catch (error) {
         console.error("❌ Connection/Loading failed:", error);
         const errorMessage = error instanceof Error ? error.message : "Unknown connection error";
@@ -138,78 +124,6 @@ export default function CompanyScoring() {
       console.error("❌ Failed to load indicators:", error);
       setIndicators([]);
       throw error;
-    }
-  };
-  
-  const testScoreApi = async () => {
-    if (!ratingConfig.endpoint) {
-      toast({
-        title: "No API Endpoint",
-        description: "Please enter an API endpoint first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      console.log("🧪 Testing /score API...");
-      
-      const testPayload = {
-        companies: [
-          {
-            taxcode: "0100100008",
-            sector_unique_id: "46413",
-            features: {
-              "STD_RTD13": 8543000995892.0,
-              "STD_RTD1": 1.4298459294882604,
-              "STD_RTD11": -0.163450134615411
-            },
-            yearreport: 2022,
-            length_report: 5
-          }
-        ]
-      };
-
-      console.log(`🧪 Test payload (companies format):`, testPayload);
-      
-      const response = await fetch(`${ratingConfig.endpoint}/score`, {
-        method: "POST",
-        mode: "cors",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "ngrok-skip-browser-warning": "true",
-        },
-        body: JSON.stringify(testPayload),
-      });
-
-      const responseText = await response.text();
-      console.log(`🧪 Score API Response:`, { 
-        status: response.status, 
-        statusText: response.statusText,
-        body: responseText 
-      });
-
-      if (response.ok) {
-        const data = JSON.parse(responseText);
-        const indicatorCount = data[0]?.scores?.length || 0;
-        
-        toast({
-          title: "Score API Test Success",
-          description: `Successfully scored with ${indicatorCount} indicators`,
-          variant: "default",
-        });
-        console.log(`✅ Score API test succeeded with data:`, data);
-      } else {
-        throw new Error(`HTTP ${response.status}: ${responseText}`);
-      }
-    } catch (error) {
-      console.error("🧪 Score API test failed:", error);
-      toast({
-        title: "Score API Test Failed",
-        description: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        variant: "destructive",
-      });
     }
   };
   
@@ -287,13 +201,10 @@ export default function CompanyScoring() {
     
     setFeatures(sampleFeatures);
     
-    // Update form values
-    scoringForm.setValue("cluster_label", 0);
-    scoringForm.setValue("length_report", 5);
-    scoringForm.setValue("sector", "G");
-    scoringForm.setValue("sector_unique_id", "46413");
+    // Update form values - only valid schema fields
     scoringForm.setValue("taxcode", "0100100008");
-    scoringForm.setValue("yearreport", 2022);
+    scoringForm.setValue("sector_unique_id", "G");
+    scoringForm.setValue("cluster_label", "");
     
     toast({
       title: "Sample Data Loaded",
@@ -303,55 +214,36 @@ export default function CompanyScoring() {
   };
   
   const loadMockScoringResults = () => {
-    const mockResults: ScoringResponse[] = [
+    const mockResults: ScoredCompany[] = [
       {
-        "cluster_label": 0,
-        "length_report": 5,
-        "scores": [
-          {"indicator": "STD_RTD1", "tier": "T3"},
-          {"indicator": "STD_RTD11", "tier": "T4"},
-          {"indicator": "STD_RTD118", "tier": "T6"},
-          {"indicator": "STD_RTD13", "tier": "T1"},
-          {"indicator": "STD_RTD14", "tier": "T1"},
-          {"indicator": "STD_RTD146", "tier": "T1"},
-          {"indicator": "STD_RTD147", "tier": "T4"},
-          {"indicator": "STD_RTD148", "tier": "T5"},
-          {"indicator": "STD_RTD26", "tier": "T1"},
-          {"indicator": "STD_RTD28", "tier": "T5"},
-          {"indicator": "STD_RTD31", "tier": "T1"},
-          {"indicator": "STD_RTD64", "tier": "T4"},
-          {"indicator": "STD_RTD71", "tier": "T5"},
-          {"indicator": "STD_RTD72", "tier": "T2"},
-          {"indicator": "STD_RTD74", "tier": "T6"},
-          {"indicator": "STD_RTD75", "tier": "T5"},
-          {"indicator": "STD_RTD76", "tier": "T5"},
-          {"indicator": "STD_RTD77", "tier": "T1"},
-          {"indicator": "STD_RTD78", "tier": "T8"},
-          {"indicator": "STD_RTD8", "tier": "T1"},
-          {"indicator": "STD_RTD81", "tier": "T3"},
-          {"indicator": "STD_RTD82", "tier": "T3"},
-          {"indicator": "STD_RTD83", "tier": "T1"},
-          {"indicator": "STD_RTD84", "tier": "T5"},
-          {"indicator": "STD_RTD85", "tier": "T7"},
-          {"indicator": "STD_RTD86", "tier": "T1"},
-          {"indicator": "STD_RTD87", "tier": "T4"},
-          {"indicator": "STD_RTD88", "tier": "T5"},
-          {"indicator": "STD_RTD89", "tier": "T5"},
-          {"indicator": "STD_RTD9", "tier": "T2"},
-          {"indicator": "STD_RTD92", "tier": "T6"},
-          {"indicator": "STD_RTD93", "tier": "T6"},
-          {"indicator": "STD_RTD94", "tier": "T6"},
-          {"indicator": "STD_RTD95", "tier": "T8"},
-          {"indicator": "STD_RTD96", "tier": "T4"},
-          {"indicator": "STD_RTD97", "tier": "T1"},
-          {"indicator": "STD_RTD98", "tier": "T6"},
-          {"indicator": "STD_RTD99", "tier": "T6"},
-          {"indicator": "empl_qtty", "tier": "T1"}
+        taxcode: "0100100008",
+        sector: "G",
+        cluster_label: 1,
+        scores: [
+          { indicator: "STD_RTD1", tier: "T2" },
+          { indicator: "STD_RTD11", tier: "T3" },
+          { indicator: "STD_RTD13", tier: "T1" },
+          { indicator: "STD_RTD14", tier: "T1" },
+          { indicator: "STD_RTD146", tier: "T2" },
+          { indicator: "STD_RTD147", tier: "T4" },
+          { indicator: "STD_RTD148", tier: "T5" },
+          { indicator: "STD_RTD26", tier: "T2" },
+          { indicator: "STD_RTD28", tier: "T6" }
         ],
-        "sector": "G",
-        "sector_unique_id": "46413",
-        "taxcode": "0100100008",
-        "yearreport": 2022
+        // Legacy fields for backward compatibility
+        composite_score: 75.5,
+        rating: "BBB",
+        indicator_scores: {
+          "STD_RTD1": 0.85,
+          "STD_RTD11": 0.62,
+          "STD_RTD13": 0.94,
+          "STD_RTD14": 0.91,
+          "STD_RTD146": 0.88,
+          "STD_RTD147": 0.55,
+          "STD_RTD148": 0.45,
+          "STD_RTD26": 0.89,
+          "STD_RTD28": 0.42
+        }
       }
     ];
       
@@ -413,52 +305,85 @@ export default function CompanyScoring() {
         throw new Error("No valid numeric features found");
       }
       
-      const request: ScoringRequest = {
-        companies: [
-          {
-            taxcode: data.taxcode,
-            sector_unique_id: data.sector_unique_id,
-            features: numericFeatures,
-            yearreport: data.yearreport,
-            length_report: data.length_report,
-          }
-          // TODO: Future - support multiple companies
-          // Add more companies here if needed
-        ]
-      };
+      // Build request in the correct format - separate request for each indicator
+      const request = Object.keys(numericFeatures).map(indicator => ({
+        taxcode: data.taxcode,
+        sector: data.sector_unique_id || null,
+        cluster_label: data.cluster_label ? parseInt(data.cluster_label) : null,
+        indicators: [indicator], // Single indicator per request
+        weights: [1.0], // Single weight for single indicator
+        [indicator]: numericFeatures[indicator] // Only include this specific indicator
+      }));
       
-      console.log("🔄 Submitting scoring request:", request);
-      console.log(`📊 Features count: ${Object.keys(numericFeatures).length}`);
+      console.log("📤 Submitting scoring request (separate indicators):", request);
+      console.log(`📊 Total requests: ${request.length} (one per indicator)`);
       
-      const results = await ratingApi.getScoring(request, ratingConfig);
-      console.log("✅ Scoring results received:", results);
-      console.log("✅ Results type:", typeof results, "Is array:", Array.isArray(results));
-      console.log("✅ Results length:", results?.length);
-      
-      // Validate results format - but don't throw if empty
-      if (!Array.isArray(results)) {
-        throw new Error(`Expected array response, got ${typeof results}`);
-      }
-      
-      // Allow empty results - just show message
-      if (results.length === 0) {
-        setScoringResults([]);
-        toast({
-          title: "No Results",
-          description: "API returned no scoring results. This might be normal depending on your data.",
-          variant: "default",
-        });
-        return;
-      }
-      
-      setScoringResults(results);
-      console.log("📊 Updated scoringResults state:", results);
-      
-      toast({
-        title: "Scoring Complete",
-        description: `Successfully scored company with ${Object.keys(numericFeatures).length} features and got ${results.length} result(s)`,
-        variant: "default",
+      const response = await fetch(`${ratingConfig.endpoint}/score`, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify(request),
       });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("✅ Scoring API response:", result);
+      console.log("🔍 API response companies:", result?.companies);
+      console.log("🔍 First company scores:", result?.companies?.[0]?.scores);
+      
+      // Handle the new response format with multiple indicator results
+      if (result?.companies?.length > 0) {
+        // Combine all scores from all indicator responses into one company result
+        const allScores: Array<{ indicator: string; tier: string }> = [];
+        
+        result.companies.forEach((company: any) => {
+          if (company.scores && Array.isArray(company.scores)) {
+            allScores.push(...company.scores);
+          }
+        });
+        
+        // Create a single consolidated result
+        const consolidatedResult = {
+          taxcode: data.taxcode,
+          sector: data.sector_unique_id || null,
+          cluster_label: data.cluster_label ? parseInt(data.cluster_label) : null,
+          scores: allScores,
+          // Legacy fields for compatibility
+          composite_score: 0,
+          rating: "N/A",
+          indicator_scores: {}
+        };
+        
+        setScoringResults([consolidatedResult]);
+        setShowCsvResults(false); // Ensure we show single results, not CSV results
+        
+        // Debug logging
+        console.log("🔍 Consolidated scores from all indicators:", allScores);
+        console.log("🔍 Final consolidated result:", consolidatedResult);
+        
+        // Force immediate feedback for testing
+        setTimeout(() => {
+          console.log("🔍 scoringResults state after timeout:", scoringResults.length);
+        }, 100);
+        
+        toast({
+          title: "Scoring Successful",
+          description: `Company ${data.taxcode} scored successfully with ${allScores.length} indicator results`,
+        });
+        
+      } else {
+        throw new Error("No scoring results returned from API");
+      }
+      
+      console.log("✅ Scoring completed:", result);
     } catch (error) {
       console.error("❌ Scoring failed:", error);
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -483,19 +408,155 @@ export default function CompanyScoring() {
     return "secondary";
   };
 
-  // CSV column definitions - order as specified
+  // Export single company results to CSV
+  const exportSingleToCsv = (useTabs = false) => {
+    if (!scoringResults.length) return;
+    
+    const separator = useTabs ? '\t' : ',';
+    
+    // Create CSV header
+    const basicColumns = ['taxcode', 'sector', 'cluster_label'];
+    
+    // Get all unique indicators from results
+    const allIndicators = new Set<string>();
+    scoringResults.forEach(result => {
+      result.scores?.forEach(score => {
+        allIndicators.add(score.indicator);
+      });
+    });
+    const indicatorColumns = Array.from(allIndicators).sort();
+    
+    const allColumns = [...basicColumns, ...indicatorColumns];
+    const header = allColumns.join(separator);
+    
+    // Create CSV rows
+    const rows = scoringResults.map(result => {
+      const row: string[] = [];
+      
+      // Fill basic info
+      row.push(result.taxcode);
+      row.push(result.sector || '');
+      row.push(result.cluster_label?.toString() || '');
+      
+      // Create indicator -> tier mapping
+      const indicatorTiers: { [key: string]: string } = {};
+      result.scores?.forEach(score => {
+        indicatorTiers[score.indicator] = score.tier;
+      });
+      
+      // Fill indicator tiers
+      indicatorColumns.forEach(indicator => {
+        const tier = indicatorTiers[indicator];
+        row.push(tier || '');
+      });
+      
+      // Handle values that might contain separators
+      return row.map(value => {
+        const strValue = value.toString();
+        if (separator === ',' && (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n'))) {
+          return `"${strValue.replace(/"/g, '""')}"`;
+        }
+        return strValue;
+      }).join(separator);
+    });
+    
+    const csvContent = [header, ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    
+    const fileExtension = useTabs ? '_tab.csv' : '.csv';
+    link.setAttribute('download', `single_company_scoring_${new Date().getTime()}${fileExtension}`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Export Complete",
+      description: `Single company CSV file has been downloaded (${useTabs ? 'tab' : 'comma'} separated)`,
+      variant: "default",
+    });
+  };
+
+  // Export single company results to Excel
+  const exportSingleToExcel = () => {
+    if (!scoringResults.length) return;
+    
+    // Create worksheet data
+    const wsData = [];
+    
+    // Create header
+    const basicColumns = ['taxcode', 'sector', 'cluster_label'];
+    
+    // Get all unique indicators
+    const allIndicators = new Set<string>();
+    scoringResults.forEach(result => {
+      result.scores?.forEach(score => {
+        allIndicators.add(score.indicator);
+      });
+    });
+    const indicatorColumns = Array.from(allIndicators).sort();
+    
+    // Header row
+    wsData.push([...basicColumns, ...indicatorColumns]);
+    
+    // Data rows
+    scoringResults.forEach(result => {
+      const row = [];
+      
+      // Fill basic info
+      row.push(result.taxcode);
+      row.push(result.sector || '');
+      row.push(result.cluster_label || '');
+      
+      // Create indicator -> tier mapping
+      const indicatorTiers: { [key: string]: string } = {};
+      result.scores?.forEach(score => {
+        indicatorTiers[score.indicator] = score.tier;
+      });
+      
+      // Fill tier scores for each indicator
+      indicatorColumns.forEach(indicator => {
+        row.push(indicatorTiers[indicator] || '');
+      });
+      
+      wsData.push(row);
+    });
+    
+    // Convert to CSV format (simple Excel compatible)
+    const csvContent = wsData.map(row => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `single_company_scoring_${new Date().getTime()}.xlsx`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({
+      title: "Export Complete", 
+      description: "Single company Excel file has been downloaded",
+      variant: "default",
+    });
+  };
+
+  // CSV column definitions - updated format with cluster_label, indicators, weights
   const csvColumns = [
-    "taxcode", "sector_unique_id", "empl_qtty", "yearreport", "length_report",
+    "taxcode", "sector", "cluster_label", "indicators", "weights",
     "STD_RTD146", "STD_RTD71", "STD_RTD96", "STD_RTD97", "STD_RTD98", "STD_RTD99",
     "STD_RTD1", "STD_RTD72", "STD_RTD148", "STD_RTD74", "STD_RTD76", "STD_RTD77",
     "STD_RTD78", "STD_RTD81", "STD_RTD64", "STD_RTD75", "STD_RTD13", "STD_RTD14",
-    "STD_RTD31", "empl_qtty.1", "STD_RTD26", "STD_RTD8", "STD_RTD82", "STD_RTD83",
+    "STD_RTD31", "empl_qtty", "STD_RTD26", "STD_RTD8", "STD_RTD82", "STD_RTD83",
     "STD_RTD84", "STD_RTD85", "STD_RTD86", "STD_RTD9", "STD_RTD11", "STD_RTD28",
     "STD_RTD87", "STD_RTD88", "STD_RTD89", "STD_RTD118", "STD_RTD92", "STD_RTD93",
     "STD_RTD94", "STD_RTD95", "STD_RTD147"
   ];
 
-  // Parse CSV text to companies array - handle both comma and tab separators
+  // Parse CSV text to companies array - support both old and new formats
   const parseCsvToCompanies = (csvText: string): ScoringCompany[] => {
     const lines = csvText.trim().split('\n');
     const companies: ScoringCompany[] = [];
@@ -549,6 +610,21 @@ export default function CompanyScoring() {
       }
     };
     
+    // Parse header to get column mapping
+    const headerValues = parseCsvLine(headerLine);
+    const columnMapping: { [key: string]: number } = {};
+    headerValues.forEach((header, index) => {
+      columnMapping[header.trim()] = index;
+    });
+    
+    console.log("📋 CSV Header mapping:", columnMapping);
+    
+    // Detect CSV format by checking for key columns
+    const hasNewFormat = columnMapping.hasOwnProperty('indicators') && columnMapping.hasOwnProperty('weights');
+    const hasOldFormat = columnMapping.hasOwnProperty('taxcode') && Object.keys(columnMapping).some(key => key.includes('features.') || key.startsWith('STD_RTD'));
+    
+    console.log(`📋 CSV Format detected: ${hasNewFormat ? 'New format (with indicators/weights)' : hasOldFormat ? 'Old format (features columns)' : 'Unknown format'}`);
+    
     // Skip header row, process data rows
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -556,52 +632,118 @@ export default function CompanyScoring() {
       
       const values = parseCsvLine(line);
       
-      if (values.length < 5) {
+      if (values.length < 3) {
         console.warn(`⚠️ Skipping row ${i}: insufficient columns (${values.length})`);
         continue;
       }
       
-      const features: { [key: string]: number } = {};
+      let company: ScoringCompany;
       
-      // Process feature columns (starting from index 2 for empl_qtty, then 5+ for other indicators)
-      for (let j = 2; j < csvColumns.length && j < values.length; j++) {
-        const column = csvColumns[j];
-        const value = values[j];
+      if (hasNewFormat) {
+        // NEW FORMAT: with indicators and weights columns
+        // Extract basic company info
+        const taxcode = values[columnMapping['taxcode']] || '';
+        const sector = values[columnMapping['sector']] || null;
+        const clusterLabelStr = values[columnMapping['cluster_label']] || '';
+        const cluster_label = clusterLabelStr && clusterLabelStr !== '' ? parseInt(clusterLabelStr) : null;
         
-        // Skip basic info columns
-        if (['taxcode', 'sector_unique_id', 'yearreport', 'length_report'].includes(column)) {
-          continue;
+        // Parse indicators and weights
+        const indicatorsStr = values[columnMapping['indicators']] || '';
+        const weightsStr = values[columnMapping['weights']] || '';
+        
+        let indicators: string[] = [];
+        let weights: number[] = [];
+        
+        if (indicatorsStr && indicatorsStr !== '') {
+          indicators = indicatorsStr.split(',').map(s => s.trim()).filter(s => s !== '');
         }
         
-        if (value && value !== '' && value !== 'null' && value !== 'N/A') {
-          const numValue = parseFloat(value);
-          if (!isNaN(numValue)) {
-            // Handle duplicate empl_qtty columns - use the first valid one
-            const featureKey = column === 'empl_qtty.1' ? 'empl_qtty' : column;
-            if (!features.hasOwnProperty('empl_qtty') || column !== 'empl_qtty.1') {
-              features[featureKey] = numValue;
+        if (weightsStr && weightsStr !== '') {
+          weights = weightsStr.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+        }
+        
+        // If no weights specified, default to 1.0 for all indicators
+        if (indicators.length > 0 && weights.length === 0) {
+          weights = indicators.map(() => 1.0);
+        }
+        
+        // Extract indicator values based on indicators list
+        const indicatorValues: { [key: string]: number } = {};
+        
+        indicators.forEach(indicator => {
+          if (columnMapping[indicator] !== undefined) {
+            const value = values[columnMapping[indicator]];
+            if (value && value !== '' && value !== 'null' && value !== 'N/A') {
+              const numValue = parseFloat(value);
+              if (!isNaN(numValue)) {
+                indicatorValues[indicator] = numValue;
+              }
             }
           }
-        }
+        });
+        
+        // Create company object in new format
+        company = {
+          taxcode: taxcode,
+          sector: sector,
+          cluster_label: cluster_label,
+          indicators: indicators,
+          weights: weights,
+          // Add indicator values as flat properties
+          ...indicatorValues
+        };
+        
+      } else {
+        // OLD FORMAT: features as individual columns
+        const taxcode = values[columnMapping['taxcode']] || '';
+        const sector = values[columnMapping['sector']] || values[columnMapping['sector_unique_id']] || null;
+        const cluster_label = null; // Old format doesn't have cluster_label
+        
+        // Extract all feature columns (those with features. prefix or STD_RTD prefix)
+        const indicatorValues: { [key: string]: number } = {};
+        const indicators: string[] = [];
+        
+        Object.entries(columnMapping).forEach(([header, index]) => {
+          // Handle both "features.STD_RTD1" and "STD_RTD1" formats
+          let indicatorName = '';
+          if (header.startsWith('features.')) {
+            indicatorName = header.replace('features.', '');
+          } else if (header.startsWith('STD_RTD') || header === 'empl_qtty') {
+            indicatorName = header;
+          }
+          
+          if (indicatorName && index < values.length) {
+            const value = values[index];
+            if (value && value !== '' && value !== 'null' && value !== 'N/A') {
+              const numValue = parseFloat(value);
+              if (!isNaN(numValue)) {
+                indicatorValues[indicatorName] = numValue;
+                indicators.push(indicatorName);
+              }
+            }
+          }
+        });
+        
+        // Create company object in old format - convert to new format structure
+        company = {
+          taxcode: taxcode,
+          sector: sector,
+          cluster_label: cluster_label,
+          indicators: indicators,
+          weights: indicators.map(() => 1.0), // Default equal weights
+          // Add indicator values as flat properties
+          ...indicatorValues
+        };
       }
       
-      // Create company object
-      const company: ScoringCompany = {
-        taxcode: values[0] || '',
-        sector_unique_id: values[1] || '',
-        features: features,
-        yearreport: values[3] ? parseInt(values[3]) : 2022,
-        length_report: values[4] ? parseInt(values[4]) : 5
-      };
-      
-      if (company.taxcode && company.sector_unique_id && Object.keys(features).length > 0) {
+      if (company.taxcode && company.indicators.length > 0) {
         companies.push(company);
-        console.log(`✅ Parsed company ${company.taxcode} with ${Object.keys(features).length} features`);
+        console.log(`✅ Parsed company ${company.taxcode} with indicators: ${company.indicators.join(', ')}`);
       } else {
         console.warn(`⚠️ Skipping invalid company data at row ${i}:`, {
           taxcode: company.taxcode,
-          sector_unique_id: company.sector_unique_id,
-          features: Object.keys(features).length
+          indicators: company.indicators.length,
+          sector: company.sector
         });
       }
     }
@@ -614,6 +756,10 @@ export default function CompanyScoring() {
     const file = event.target.files?.[0];
     if (!file) return;
     
+    console.log("📁 Real file upload detected:", file.name);
+    
+    // Clear previous results when uploading new file
+    setCsvResults([]);
     setCsvFile(file);
     
     try {
@@ -670,26 +816,93 @@ export default function CompanyScoring() {
 
     setCsvProcessing(true);
     try {
-      const request: ScoringRequest = {
-        companies: csvData
-      };
+      // Convert CSV data to separate indicator requests (like single company scoring)
+      const allRequests: ScoringRequest = [];
       
-      console.log("🔄 Processing CSV scoring request:", request);
-      console.log(`📊 Companies count: ${csvData.length}`);
+      csvData.forEach(company => {
+        // Get all indicator values from company object (exclude basic fields)
+        const indicatorValues: { [key: string]: number } = {};
+        Object.entries(company).forEach(([key, value]) => {
+          if (!['taxcode', 'sector', 'cluster_label', 'indicators', 'weights'].includes(key)) {
+            const numValue = typeof value === 'number' ? value : parseFloat(value as string);
+            if (!isNaN(numValue)) {
+              indicatorValues[key] = numValue;
+            }
+          }
+        });
+        
+        // Create separate request for each indicator
+        Object.entries(indicatorValues).forEach(([indicator, value]) => {
+          allRequests.push({
+            taxcode: company.taxcode,
+            sector: company.sector || null,
+            cluster_label: company.cluster_label || null,
+            indicators: [indicator], // Single indicator per request
+            weights: [1.0], // Single weight for single indicator
+            [indicator]: value // Only include this specific indicator value
+          });
+        });
+      });
       
-      const results = await ratingApi.getScoring(request, ratingConfig);
-      console.log("✅ CSV Scoring results received:", results);
+      console.log("🔄 Processing CSV scoring request (separate indicators):", allRequests);
+      console.log(`📊 Total requests: ${allRequests.length} (${csvData.length} companies × multiple indicators)`);
       
-      if (!Array.isArray(results)) {
-        throw new Error(`Expected array response, got ${typeof results}`);
+      const response = await fetch(`${ratingConfig.endpoint}/score`, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "ngrok-skip-browser-warning": "true",
+        },
+        body: JSON.stringify(allRequests),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("✅ CSV Scoring results received:", result);
+      
+      if (!result?.companies || !Array.isArray(result.companies)) {
+        throw new Error(`Expected response with companies array, got ${typeof result}`);
       }
       
-      setCsvResults(results);
+      // Group results by company taxcode and consolidate scores (like single company scoring)
+      const companyResultsMap = new Map<string, ScoredCompany>();
+      
+      result.companies.forEach((company: any) => {
+        const taxcode = company.taxcode;
+        
+        if (!companyResultsMap.has(taxcode)) {
+          companyResultsMap.set(taxcode, {
+            taxcode: taxcode,
+            sector: company.sector,
+            cluster_label: company.cluster_label,
+            scores: [],
+            composite_score: 0,
+            rating: "N/A",
+            indicator_scores: {}
+          });
+        }
+        
+        const existingCompany = companyResultsMap.get(taxcode)!;
+        if (company.scores && Array.isArray(company.scores)) {
+          existingCompany.scores.push(...company.scores);
+        }
+      });
+      
+      const consolidatedResults = Array.from(companyResultsMap.values());
+      console.log("🔄 Consolidated CSV results from separate indicator requests:", consolidatedResults);
+      
+      setCsvResults(consolidatedResults);
       setShowCsvResults(true);
       
       toast({
         title: "CSV Scoring Complete",
-        description: `Successfully scored ${csvData.length} companies and got ${results.length} result(s)`,
+        description: `Successfully scored ${csvData.length} companies with ${allRequests.length} separate indicator requests and got ${consolidatedResults.length} consolidated result(s)`,
         variant: "default",
       });
       
@@ -715,25 +928,40 @@ export default function CompanyScoring() {
     
     const separator = useTabs ? '\t' : ',';
     
-    // Create CSV header
-    const header = csvColumns.join(separator);
+    // Create CSV header based on new response format
+    const basicColumns = ['taxcode', 'sector', 'cluster_label'];
+    
+    // Get all unique indicators from results
+    const allIndicators = new Set<string>();
+    csvResults.forEach(result => {
+      result.scores?.forEach(score => {
+        allIndicators.add(score.indicator);
+      });
+    });
+    const indicatorColumns = Array.from(allIndicators).sort();
+    
+    const allColumns = [...basicColumns, ...indicatorColumns];
+    const header = allColumns.join(separator);
     
     // Create CSV rows
     const rows = csvResults.map(result => {
-      const row = new Array(csvColumns.length).fill('');
+      const row: string[] = [];
       
       // Fill basic info
-      row[0] = result.taxcode;
-      row[1] = result.sector_unique_id;
-      row[3] = result.yearreport.toString();
-      row[4] = result.length_report.toString();
+      row.push(result.taxcode);
+      row.push(result.sector || '');
+      row.push(result.cluster_label?.toString() || '');
       
-      // Fill tier scores for each indicator
-      result.scores.forEach(({ indicator, tier }) => {
-        const columnIndex = csvColumns.indexOf(indicator);
-        if (columnIndex >= 0) {
-          row[columnIndex] = tier;
-        }
+      // Create indicator -> tier mapping
+      const indicatorTiers: { [key: string]: string } = {};
+      result.scores?.forEach(score => {
+        indicatorTiers[score.indicator] = score.tier;
+      });
+      
+      // Fill indicator tiers
+      indicatorColumns.forEach(indicator => {
+        const tier = indicatorTiers[indicator];
+        row.push(tier || '');
       });
       
       // Handle values that might contain separators
@@ -773,25 +1001,39 @@ export default function CompanyScoring() {
     // Create worksheet data
     const wsData = [];
     
+    // Create header based on actual results structure
+    const basicColumns = ['taxcode', 'sector', 'cluster_label'];
+    
+    // Get all unique indicators
+    const allIndicators = new Set<string>();
+    csvResults.forEach(result => {
+      result.scores?.forEach(score => {
+        allIndicators.add(score.indicator);
+      });
+    });
+    const indicatorColumns = Array.from(allIndicators).sort();
+    
     // Header row
-    wsData.push(csvColumns);
+    wsData.push([...basicColumns, ...indicatorColumns]);
     
     // Data rows
     csvResults.forEach(result => {
-      const row = new Array(csvColumns.length).fill('');
+      const row = [];
       
       // Fill basic info
-      row[0] = result.taxcode;
-      row[1] = result.sector_unique_id;
-      row[3] = result.yearreport;
-      row[4] = result.length_report;
+      row.push(result.taxcode);
+      row.push(result.sector || '');
+      row.push(result.cluster_label || '');
+      
+      // Create indicator -> tier mapping
+      const indicatorTiers: { [key: string]: string } = {};
+      result.scores?.forEach(score => {
+        indicatorTiers[score.indicator] = score.tier;
+      });
       
       // Fill tier scores for each indicator
-      result.scores.forEach(({ indicator, tier }) => {
-        const columnIndex = csvColumns.indexOf(indicator);
-        if (columnIndex >= 0) {
-          row[columnIndex] = tier;
-        }
+      indicatorColumns.forEach(indicator => {
+        row.push(indicatorTiers[indicator] || '');
       });
       
       wsData.push(row);
@@ -828,10 +1070,11 @@ export default function CompanyScoring() {
               Upload CSV file with company data to score multiple companies at once.
             </p>
             <div className="text-sm text-muted-foreground p-3 bg-muted/30 rounded-lg">
-              <p className="font-medium mb-2">📋 CSV Format:</p>
+              <p className="font-medium mb-2">📋 Supported CSV Formats:</p>
               <div className="text-left space-y-1">
-                <p>• <strong>Columns</strong>: taxcode, sector_unique_id, empl_qtty, yearreport, length_report, [indicators...]</p>
-                <p>• <strong>Order</strong>: STD_RTD146, STD_RTD71, STD_RTD96, etc.</p>
+                <p>• <strong>New Format</strong>: taxcode, sector, cluster_label, indicators, weights, [values...]</p>
+                <p>• <strong>Legacy Format</strong>: taxcode, sector, features.STD_RTD146, features.STD_RTD71, ...</p>
+                <p>• <strong>Auto-Detection</strong>: Format detected automatically during upload</p>
                 <p>• <strong>Processing</strong>: Upload → Parse → Score → Export</p>
               </div>
             </div>
@@ -859,9 +1102,6 @@ export default function CompanyScoring() {
                 📄 CSV (Tab)
               </Button>
             </div>
-            <Button variant="outline" size="sm" onClick={exportToExcel}>
-              📊 Export Excel
-            </Button>
           </div>
         </div>
 
@@ -870,54 +1110,64 @@ export default function CompanyScoring() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                {csvColumns.map(column => (
-                  <TableHead key={column} className="min-w-[100px] text-xs">
-                    {column}
-                  </TableHead>
-                ))}
+                <TableHead className="min-w-[100px] text-xs">TaxCode</TableHead>
+                <TableHead className="min-w-[100px] text-xs">Sector</TableHead>
+                <TableHead className="min-w-[100px] text-xs">Cluster</TableHead>
+                <TableHead className="min-w-[100px] text-xs">Scores</TableHead>
+                {/* Dynamic columns for each unique indicator found in results */}
+                {(() => {
+                  const allIndicators = new Set<string>();
+                  csvResults.forEach(result => {
+                    result.scores?.forEach(score => {
+                      allIndicators.add(score.indicator);
+                    });
+                  });
+                  return Array.from(allIndicators).sort().map(indicator => (
+                    <TableHead key={indicator} className="min-w-[100px] text-xs">
+                      {indicator}
+                    </TableHead>
+                  ));
+                })()}
               </TableRow>
             </TableHeader>
             <TableBody>
               {csvResults.map((result, index) => {
-                // Create a map of indicator -> tier for quick lookup
-                const tierMap: { [key: string]: string } = {};
-                result.scores.forEach(({ indicator, tier }) => {
-                  tierMap[indicator] = tier;
+                // Get all unique indicators for this table
+                const allIndicators = new Set<string>();
+                csvResults.forEach(r => {
+                  r.scores?.forEach(score => {
+                    allIndicators.add(score.indicator);
+                  });
                 });
-
+                const indicatorList = Array.from(allIndicators).sort();
+                
+                // Create a map of indicator -> tier for this result
+                const indicatorTiers: { [key: string]: string } = {};
+                result.scores?.forEach(score => {
+                  indicatorTiers[score.indicator] = score.tier;
+                });
+                
                 return (
                   <TableRow key={index}>
-                    {csvColumns.map(column => {
-                      let cellValue = '';
-                      let isIndicator = false;
-
-                      // Determine cell value based on column type
-                      if (column === 'taxcode') {
-                        cellValue = result.taxcode;
-                      } else if (column === 'sector_unique_id') {
-                        cellValue = result.sector_unique_id;
-                      } else if (column === 'yearreport') {
-                        cellValue = result.yearreport.toString();
-                      } else if (column === 'length_report') {
-                        cellValue = result.length_report.toString();
-                      } else {
-                        // This is an indicator column
-                        isIndicator = true;
-                        cellValue = tierMap[column] || '';
-                      }
-
-                      return (
-                        <TableCell key={column} className="text-xs">
-                          {isIndicator && cellValue ? (
-                            <Badge variant={getTierColor(cellValue)} className="text-xs">
-                              {cellValue}
-                            </Badge>
-                          ) : (
-                            cellValue
-                          )}
-                        </TableCell>
-                      );
-                    })}
+                    <TableCell className="text-xs font-medium">{result.taxcode}</TableCell>
+                    <TableCell className="text-xs">{result.sector || '-'}</TableCell>
+                    <TableCell className="text-xs">{result.cluster_label || '-'}</TableCell>
+                    <TableCell className="text-xs font-medium">
+                      {result.scores?.length || 0} scores
+                    </TableCell>
+                    {/* Display tier for each indicator */}
+                    {indicatorList.map(indicator => (
+                      <TableCell key={indicator} className="text-xs">
+                        {indicatorTiers[indicator] ? (
+                          <Badge 
+                            variant={getTierColor(indicatorTiers[indicator])} 
+                            className="text-xs"
+                          >
+                            {indicatorTiers[indicator]}
+                          </Badge>
+                        ) : '-'}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 );
               })}
@@ -974,10 +1224,10 @@ export default function CompanyScoring() {
                 <p className="font-medium mb-2">📋 How it works:</p>
                 <div className="text-left space-y-1">
                   <p>• <strong>Connect API</strong>: Configure scoring endpoint</p>
-                  <p>• <strong>Company Info</strong>: Enter tax code, sector, year, etc.</p>
+                  <p>• <strong>Company Info</strong>: Enter tax code, sector, cluster (0-4)</p>
                   <p>• <strong>Financial Features</strong>: Add indicator values</p>
                   <p>• <strong>Calculate Score</strong>: Get tier classification (T1-T8)</p>
-                  <p>• <strong>Results Table</strong>: View tier scores for each indicator</p>
+                  <p>• <strong>Export Results</strong>: Download CSV or Excel files</p>
                 </div>
               </div>
             </div>
@@ -998,15 +1248,30 @@ export default function CompanyScoring() {
             
             return (
               <div key={resultIndex} className="space-y-4">
-                {/* Summary Card */}
+                {/* Summary Card with Export Buttons */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center justify-between">
-                      <span>Company: {result.taxcode} | Sector: {result.sector} | Year: {result.yearreport}</span>
-                      <Badge variant="outline">{totalIndicators} indicators</Badge>
+                      <span>Company: {result.taxcode} | Sector: {result.sector || 'N/A'}</span>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{totalIndicators} indicators</Badge>
+                        
+                        {/* Export buttons for single company */}
+                        <div className="flex gap-1">
+                          <Button variant="outline" size="sm" onClick={() => exportSingleToCsv(false)}>
+                            📄 CSV
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => exportSingleToCsv(true)}>
+                            📄 Tab
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={exportSingleToExcel}>
+                            📊 Excel
+                          </Button>
+                        </div>
+                      </div>
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Cluster: {result.cluster_label} | Length Report: {result.length_report} | Sector ID: {result.sector_unique_id}
+                      Cluster: {result.cluster_label || 'N/A'}
                     </p>
                   </CardHeader>
                   <CardContent>
@@ -1159,18 +1424,6 @@ export default function CompanyScoring() {
                 <Button type="submit" className="w-full">
                   Connect to API
                 </Button>
-                
-                {/* Test Score API Button */}
-                {connectionStatus === "connected" && (
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    className="w-full"
-                    onClick={testScoreApi}
-                  >
-                    🧪 Test Score API
-                  </Button>
-                )}
               </form>
             </Form>
           </div>
@@ -1212,10 +1465,26 @@ export default function CompanyScoring() {
                   )}
                   
                   <div className="text-xs text-muted-foreground">
-                    <p className="font-medium mb-1">Expected CSV format:</p>
+                    <p className="font-medium mb-1">Expected CSV formats (auto-detected):</p>
                     <p className="mb-1">📋 Separators: Comma (,) or Tab (\t) - auto-detected</p>
-                    <p>📋 Columns: taxcode, sector_unique_id, empl_qtty, yearreport, length_report, [indicators...]</p>
-                    <p className="mt-2 text-xs opacity-75">Missing indicators will be skipped. Quotes in comma-separated files are handled automatically.</p>
+                    
+                    <div className="mt-2 space-y-2">
+                      <div className="border-l-2 border-blue-200 pl-2">
+                        <p className="font-medium text-blue-700">Format 1 (New): </p>
+                        <p>📋 Columns: taxcode, sector, cluster_label, indicators, weights, [indicator values...]</p>
+                        <p>📋 Indicators: comma-separated list (e.g. "STD_RTD97,STD_RTD71")</p>
+                        <p>📋 Weights: comma-separated numbers (e.g. "0.7,0.3") or empty for equal weights</p>
+                      </div>
+                      
+                      <div className="border-l-2 border-green-200 pl-2">
+                        <p className="font-medium text-green-700">Format 2 (Legacy): </p>
+                        <p>📋 Columns: taxcode, sector, sector_unique_id, yearreport, length_report, features.empl_qtty, features.STD_RTD146, ...</p>
+                        <p>📋 Features: individual columns with "features." prefix or direct indicator names</p>
+                        <p>📋 Auto-converts: removes "features." prefix and creates equal weights</p>
+                      </div>
+                    </div>
+                    
+                    <p className="mt-2 text-xs opacity-75">Your CSV format will be auto-detected and processed accordingly.</p>
                   </div>
                   
                   {csvData.length > 0 && (
@@ -1240,78 +1509,52 @@ export default function CompanyScoring() {
                       
                       <Button
                         onClick={() => {
-                          // Load mock CSV data for testing
+                          // Load mock CSV data for testing - new format with indicators and weights
+                          console.log("🎭 Loading mock CSV data...");
+                          
+                          // Reset file input first to avoid conflicts
+                          const fileInput = document.getElementById('csv-upload') as HTMLInputElement;
+                          if (fileInput) {
+                            fileInput.value = '';
+                          }
+                          
                           const mockCsvCompanies: ScoringCompany[] = [
                             {
-                              taxcode: "0100100008",
-                              sector_unique_id: "46413",
-                              features: {
-                                "STD_RTD1": 1.4298459294882604,
-                                "STD_RTD11": -0.163450134615411,
-                                "STD_RTD118": 1.1123457018541,
-                                "STD_RTD13": 8543000995892.0,
-                                "STD_RTD14": 5974770301965.0,
-                                "STD_RTD146": 0.1781383557744278,
-                                "STD_RTD147": 0.8497527575929522,
-                                "STD_RTD148": 4.87141453245363,
-                                "STD_RTD26": 0.3161463520193703,
-                                "STD_RTD28": 0.0597972745346027,
-                                "STD_RTD31": 1375057176046.0,
-                                "STD_RTD60": 434719310025.0,
-                                "STD_RTD61": 2092192374319.0005,
-                                "STD_RTD64": 7.464660888589531,
-                                "STD_RTD71": 0.3741207161764617,
-                                "STD_RTD72": 0.153540383685473,
-                                "STD_RTD74": 4.483261327033508,
-                                "STD_RTD75": 5.442856549159517,
-                                "STD_RTD76": 0.7823628601465016,
-                                "STD_RTD77": 0.0512084770374026,
-                                "STD_RTD78": 0.1619771245510531,
-                                "STD_RTD8": 0.0305950947928251,
-                                "STD_RTD81": 91.8669083051704,
-                                "STD_RTD82": 0.0421495190747473,
-                                "STD_RTD83": 0.2364644639126792,
-                                "STD_RTD84": -0.1362858178122266,
-                                "STD_RTD85": -0.0132155006995811,
-                                "STD_RTD86": 0.1888852816570525,
-                                "STD_RTD87": -0.0601674462330797,
-                                "STD_RTD88": 0.0127545665745962,
-                                "STD_RTD89": -0.0206688898443121,
-                                "STD_RTD9": 0.043016865056978,
-                                "STD_RTD92": 2.540435089698045,
-                                "STD_RTD93": 2.209298116944523,
-                                "STD_RTD94": 0.1531385651299867,
-                                "STD_RTD95": -0.9756153148702518,
-                                "STD_RTD96": 4.596509725650529,
-                                "STD_RTD97": 6.6864117420939735,
-                                "STD_RTD98": -0.2108779249659391,
-                                "STD_RTD99": -2.8824090067144565,
-                                "empl_qtty": 6132.0
-                              },
-                              yearreport: 2022,
-                              length_report: 5
+                              taxcode: "0100100001",
+                              sector: null,
+                              cluster_label: null,
+                              indicators: ["STD_RTD97", "STD_RTD71"],
+                              weights: [0.7, 0.3],
+                              "STD_RTD97": 0.42,
+                              "STD_RTD71": 0.35
                             },
                             {
-                              taxcode: "0100100009", 
-                              sector_unique_id: "46413",
-                              features: {
-                                "empl_qtty": 3500.0,
-                                "STD_RTD146": 0.2,
-                                "STD_RTD71": 0.5,
-                                "STD_RTD1": 2.0,
-                                "STD_RTD13": 5000000000000.0
-                              },
-                              yearreport: 2022,
-                              length_report: 5
+                              taxcode: "0100100002", 
+                              sector: "G",
+                              cluster_label: null,
+                              indicators: ["STD_RTD97"],
+                              weights: [1.0],
+                              "STD_RTD97": 0.78
+                            },
+                            {
+                              taxcode: "0100100003",
+                              sector: "A", 
+                              cluster_label: 2,
+                              indicators: ["STD_RTD71", "STD_RTD1"],
+                              weights: [1.0, 1.0],
+                              "STD_RTD71": 0.12,
+                              "STD_RTD1": 1.25
                             }
                           ];
                           
+                          // Clear previous results when loading mock data
+                          setCsvResults([]);
                           setCsvData(mockCsvCompanies);
                           setCsvFile(new File(["mock"], "mock_companies.csv"));
                           
                           toast({
                             title: "Mock CSV Data Loaded",
-                            description: `Loaded ${mockCsvCompanies.length} sample companies`,
+                            description: `Loaded ${mockCsvCompanies.length} sample companies with new format`,
                             variant: "default",
                           });
                         }}
@@ -1349,7 +1592,7 @@ export default function CompanyScoring() {
                     
                     <FormField
                       control={scoringForm.control}
-                      name="sector"
+                      name="sector_unique_id"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Sector</FormLabel>
@@ -1363,68 +1606,17 @@ export default function CompanyScoring() {
                     
                     <FormField
                       control={scoringForm.control}
-                      name="sector_unique_id"
+                      name="cluster_label"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Sector Unique ID</FormLabel>
-                          <FormControl>
-                            <Input placeholder="46413" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={scoringForm.control}
-                        name="cluster_label"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Cluster Label</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                {...field} 
-                                onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <FormField
-                        control={scoringForm.control}
-                        name="length_report"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Length Report</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="number" 
-                                {...field} 
-                                onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    
-                    <FormField
-                      control={scoringForm.control}
-                      name="yearreport"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Year Report</FormLabel>
+                          <FormLabel>Cluster Label (0-4)</FormLabel>
                           <FormControl>
                             <Input 
                               type="number" 
-                              placeholder="2022"
+                              min="0" 
+                              max="4" 
+                              placeholder="0, 1, 2, 3, or 4" 
                               {...field} 
-                              onChange={(e) => field.onChange(parseInt(e.target.value) || 2022)}
                             />
                           </FormControl>
                           <FormMessage />
@@ -1452,75 +1644,6 @@ export default function CompanyScoring() {
                             onClick={loadMockScoringResults}
                           >
                             🎭 Test Results
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              if (Object.keys(features).length === 0) {
-                                toast({
-                                  title: "No Features",
-                                  description: "Please load sample data first",
-                                  variant: "destructive",
-                                });
-                                return;
-                              }
-                              
-                              try {
-                                // Get form values
-                                const formData = scoringForm.getValues();
-                                const numericFeatures: { [key: string]: number } = {};
-                                
-                                for (const [key, value] of Object.entries(features)) {
-                                  const numValue = parseFloat(value);
-                                  if (!isNaN(numValue)) {
-                                    numericFeatures[key] = numValue;
-                                  }
-                                }
-                                
-                                const testRequest: ScoringRequest = {
-                                  companies: [
-                                    {
-                                      taxcode: formData.taxcode,
-                                      sector_unique_id: formData.sector_unique_id,
-                                      features: numericFeatures,
-                                      yearreport: formData.yearreport,
-                                      length_report: formData.length_report,
-                                    }
-                                  ]
-                                };
-                                
-                                console.log("🧪 Debug API call with payload:", testRequest);
-                                
-                                const results = await ratingApi.getScoring(testRequest, ratingConfig);
-                                console.log("🧪 Debug results:", results);
-                                
-                                if (Array.isArray(results) && results.length > 0) {
-                                  setScoringResults(results);
-                                  toast({
-                                    title: "Debug API Success",
-                                    description: `Got ${results.length} result(s)`,
-                                    variant: "default",
-                                  });
-                                } else {
-                                  toast({
-                                    title: "Debug API - No Results",
-                                    description: "API returned empty array",
-                                    variant: "default",
-                                  });
-                                }
-                              } catch (error) {
-                                console.error("🧪 Debug API failed:", error);
-                                toast({
-                                  title: "Debug API Failed",
-                                  description: `Error: ${error instanceof Error ? error.message : 'Unknown'}`,
-                                  variant: "destructive",
-                                });
-                              }
-                            }}
-                          >
-                            🧪 Debug API
                           </Button>
                           <Button
                             type="button"

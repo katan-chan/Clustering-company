@@ -276,7 +276,7 @@ export default function ScatterPlot(): JSX.Element {
         surfacecolor: density, // matrix ny x nx
         colorscale: "Viridis",
         opacity: 0.6,
-        showscale: true,
+        showscale: false, // colorbar
         colorbar: { title: "Mật độ DN" },
         name: "Mật độ DN",
         hoverinfo: "skip"
@@ -410,16 +410,51 @@ const layout: any = {
   title: {
     text: (() => {
       let title = "BIỂU ĐỒ CÁC DOANH NGHIỆP";
+      
+      // Add industry information if available
       try {
         if (parameters?.level_value && parameters.level_value.length > 0) {
           const allIndustries = getAllIndustries();
           const selectedIndustries = allIndustries.filter((ind: any) => parameters.level_value.includes(ind.apiCode));
-          if (selectedIndustries.length > 0) {
-            const highestLevelIndustry = selectedIndustries.reduce((prev: any, cur: any) => (prev.level < cur.level ? prev : cur));
-            title += `: (${highestLevelIndustry.apiCode}) ${highestLevelIndustry.name}`;
+          
+          if (selectedIndustries.length === 1) {
+            // Single industry selected
+            const industry = selectedIndustries[0];
+            title += `: (${industry.apiCode}) ${industry.name}`;
+          } else if (selectedIndustries.length > 1) {
+            // Multiple industries selected - show level and count
+            const levels = [...new Set(selectedIndustries.map((ind: any) => ind.level))].sort();
+            const highestLevel = Math.min(...levels); // Lower number = higher level
+            const industryNames = selectedIndustries.map((ind: any) => ind.apiCode).join(', ');
+            
+            title += `: Level ${highestLevel} - ${selectedIndustries.length} ngành (${industryNames})`;
           }
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) { 
+        console.warn("Error processing industry information:", e);
+      }
+      
+      // Add cluster filter information
+      if (selectedClusters.length > 0) {
+        if (selectedClusters.length === 1) {
+          title += ` - Cluster ${selectedClusters[0]}`;
+        } else if (selectedClusters.length >= 2) {
+          const clusterList = selectedClusters.sort((a, b) => a - b).join(', ');
+          title += ` - Clusters: ${clusterList}`;
+        }
+        
+        // Add filtered count
+        const filteredCount = filtered.length;
+        const totalCount = processedData.length;
+        title += ` (${filteredCount}/${totalCount} DN)`;
+      } else {
+        // Show total count when no cluster filter
+        const totalCount = processedData.length;
+        if (totalCount > 0) {
+          title += ` (${totalCount} DN)`;
+        }
+      }
+      
       return title;
     })(),
     font: { size: 16 }
@@ -528,8 +563,23 @@ const layout: any = {
   const toggleClusterFilter = (value: string) => {
     if (value === "all") {
       setSelectedClusters([]);
+    } else if (value === "first-half") {
+      // Select first half of clusters
+      const halfPoint = Math.ceil(clusterOptions.length / 2);
+      setSelectedClusters(clusterOptions.slice(0, halfPoint));
+    } else if (value === "second-half") {
+      // Select second half of clusters
+      const halfPoint = Math.ceil(clusterOptions.length / 2);
+      setSelectedClusters(clusterOptions.slice(halfPoint));
+    } else if (value === "even") {
+      // Select even-numbered clusters
+      setSelectedClusters(clusterOptions.filter((c: number) => c % 2 === 0));
+    } else if (value === "odd") {
+      // Select odd-numbered clusters
+      setSelectedClusters(clusterOptions.filter((c: number) => c % 2 === 1));
     } else {
-      const arr = value.split(",").map((v) => Number(v));
+      // Handle single cluster or comma-separated clusters
+      const arr = value.split(",").map((v) => Number(v)).filter(n => !isNaN(n));
       setSelectedClusters(arr);
     }
   };
@@ -542,12 +592,25 @@ const layout: any = {
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold text-foreground">Cluster Visualization</h2>
-            <p className="text-sm text-muted-foreground">Mỗi điểm trên biểu đồ là một doanh nghiệp.</p>
+            <p className="text-sm text-muted-foreground">
+              Mỗi điểm trên biểu đồ là một doanh nghiệp
+              {selectedClusters.length > 0 && (
+                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-xs">
+                  {selectedClusters.length === 1 
+                    ? `Cluster ${selectedClusters[0]}` 
+                    : `${selectedClusters.length} clusters: ${selectedClusters.sort((a, b) => a - b).join(', ')}`
+                  }
+                </span>
+              )}
+            </p>
 
             <div className="text-xs text-muted-foreground mt-2 space-y-1">
               <p>📌 <b>Ox, Oy (Ngành nghề):</b> PCA-2D của embedding 128 chiều của <i>tên ngành</i>.</p>
               <p>📌 <b>Oz (Quy mô DN):</b> chiều cao thể hiện quy mô DN (đã chuẩn hóa).</p>
               <p>📌 <b>Màu sắc:</b> cluster (mỗi màu = một cụm).</p>
+              {selectedClusters.length > 0 && (
+                <p>🔍 <b>Bộ lọc:</b> Đang hiển thị {filtered.length}/{processedData.length} doanh nghiệp.</p>
+              )}
             </div>
           </div>
 
@@ -557,14 +620,64 @@ const layout: any = {
               value={selectedClusters.length === 0 ? "all" : selectedClusters.join(",")}
               onValueChange={(value) => toggleClusterFilter(value)}
             >
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter clusters" />
+              <SelectTrigger className="w-56">
+                <SelectValue>
+                  {(() => {
+                    if (selectedClusters.length === 0) {
+                      return "All Clusters";
+                    } else if (selectedClusters.length === 1) {
+                      return `Cluster ${selectedClusters[0]}`;
+                    } else if (selectedClusters.length <= 3) {
+                      return `${selectedClusters.length} Clusters: ${selectedClusters.sort((a, b) => a - b).join(', ')}`;
+                    } else {
+                      const sorted = selectedClusters.sort((a, b) => a - b);
+                      return `${selectedClusters.length} Clusters: ${sorted.slice(0, 2).join(', ')}...`;
+                    }
+                  })()}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Clusters</SelectItem>
-                {clusterOptions.map((c: any) => (
-                  <SelectItem key={c} value={String(c)}>Cluster {c}</SelectItem>
-                ))}
+                <SelectItem value="all">
+                  All Clusters ({clusterOptions.length} total)
+                </SelectItem>
+                
+                {/* Preset multi-cluster selections */}
+                {clusterOptions.length > 2 && (
+                  <>
+                    <SelectItem value="first-half">
+                      First Half Clusters ({Math.ceil(clusterOptions.length / 2)} clusters)
+                    </SelectItem>
+                    <SelectItem value="second-half">
+                      Second Half Clusters ({Math.floor(clusterOptions.length / 2)} clusters)
+                    </SelectItem>
+                  </>
+                )}
+                
+                {clusterOptions.length > 3 && (
+                  <>
+                    <SelectItem value="even">
+                      Even Clusters ({clusterOptions.filter((c: number) => c % 2 === 0).length} clusters)
+                    </SelectItem>
+                    <SelectItem value="odd">
+                      Odd Clusters ({clusterOptions.filter((c: number) => c % 2 === 1).length} clusters)
+                    </SelectItem>
+                  </>
+                )}
+                
+                {/* Separator */}
+                {clusterOptions.length > 0 && (
+                  <div className="border-t border-gray-200 my-1"></div>
+                )}
+                
+                {/* Individual clusters */}
+                {clusterOptions.map((c: any) => {
+                  const clusterCount = processedData.filter(d => d.cluster === c).length;
+                  return (
+                    <SelectItem key={c} value={String(c)}>
+                      Cluster {c} ({clusterCount} DN)
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -620,7 +733,7 @@ const layout: any = {
         {/* <div ref={plotRef} className="w-full h-[820px]" data-testid="scatter-plot" /> */}
         <div
           ref={plotRef}
-          className="w-full h-[calc(100vh-280px)]"
+          className="w-full h-[calc(100vh-280px)]" // dieu chinh kich thuoc khung bieu do
           data-testid="scatter-plot"
         />
 

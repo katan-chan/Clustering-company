@@ -13,25 +13,72 @@ interface IndicatorsResponse {
 
 // Updated interfaces for new API format
 interface TierRequest {
-  folder?: string;
   sector: string;
+  indicators: string[]; // Array of indicator names
+  weights?: number[]; // Optional weights for each indicator
   cluster_label?: number;
-  indicator: string | (string | string[])[]; // Support both single and list spec
   k?: number;
-  writing_mode?: boolean;
+  algorithm?: string; // Clustering algorithm
 }
 
 interface TierAllRequest {
-  folder?: string;
-  indicator: string | (string | string[])[]; // Support both single and list spec
+  indicators: string[]; // Array of indicator names
+  weights?: number[]; // Optional weights for each indicator
   k?: number;
-  writing_mode?: boolean;
+  algorithm?: string; // Clustering algorithm
 }
 
 interface Tier {
   tier: string;
   range: [number | string, number | string];
   count: number;
+}
+
+// New API response format interfaces
+interface TierCompanyInfo {
+  indicator: string;
+  indicator_label: string;
+  sector_unique_id: string;
+  yearreport: number;
+  [indicatorName: string]: any; // For dynamic indicator values like "STD_RTD97_STD_RTD71": -4.140240798461966
+}
+
+interface TierLabelInfo {
+  count: number;
+  tiers_companies: TierCompanyInfo[];
+}
+
+interface TierLabel {
+  [tierName: string]: TierLabelInfo;
+}
+
+interface TierMetadata {
+  algorithm: string;
+  boundaries: Array<[number | string, number | string]>;
+  cache_key: string;
+  cluster_label: number;
+  data_shape: [number, number];
+  indicators: string[];
+  k: number;
+  mode: string;
+  result_file: string;
+  sector: string;
+  tier_labels: string[];
+  timestamp: string;
+  weights: number[];
+}
+
+interface NewTierResponse {
+  algorithm: string;
+  boundaries: Array<[number | string, number | string]>;
+  cluster_label: number;
+  indicators: string[];
+  k: number;
+  metadata: TierMetadata;
+  sector: string;
+  success: boolean;
+  tier_labels: TierLabel[];
+  weights: number[];
 }
 
 // Response for single indicator
@@ -86,32 +133,47 @@ interface CompanyDetail {
   risk_level: string;
 }
 
-// Scoring request for individual company
+// New scoring request format - single company object
 interface ScoringCompany {
   taxcode: string;
-  sector_unique_id: string;
-  features: { [key: string]: number };
-  yearreport: number;
-  length_report: number;
+  sector: string | null;
+  cluster_label: number | null;
+  indicators?: string[]; // Optional - will be generated dynamically when creating requests
+  weights?: number[]; // Optional - will be generated dynamically when creating requests
+  [indicator: string]: any; // Dynamic indicator values like "STD_RTD97": 0.42
 }
 
-// New scoring request format with companies array
-interface ScoringRequest {
-  companies: ScoringCompany[];
-}
+// New scoring request format - array of companies directly
+type ScoringRequest = ScoringCompany[];
 
-// New response format from updated API
+// Updated response format to match the new API specification
 interface ScoringResponse {
-  cluster_label: number;
-  length_report: number;
+  total_companies: number;
+  scored_companies: number;
+  companies: Array<{
+    taxcode: string;
+    sector: string | null;
+    cluster_label: number | null;
+    scores: Array<{
+      indicator: string;
+      tier: string;
+    }>;
+  }>;
+}
+
+// Individual scored company type for easier usage
+interface ScoredCompany {
+  taxcode: string;
+  sector: string | null;
+  cluster_label: number | null;
   scores: Array<{
     indicator: string;
     tier: string;
   }>;
-  sector: string;
-  sector_unique_id: string;
-  taxcode: string;
-  yearreport: number;
+  // Legacy fields for backward compatibility
+  composite_score?: number;
+  rating?: string;
+  indicator_scores?: { [indicator: string]: number };
 }
 
 class RatingApi {
@@ -232,14 +294,25 @@ class RatingApi {
   async getTiers(
     request: TierRequest,
     config: RatingConfig,
-  ): Promise<TierResponse | TierGroupResponse> {
+  ): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
       const url = `${config.endpoint}/tiers/cluster`;
       console.log(`🔄 Calling Tiers API: ${url}`);
-      console.log(`📋 Request payload:`, request);
+      
+      // Format request according to new API spec
+      const apiRequest = {
+        sector: request.sector,
+        indicators: request.indicators,
+        weights: request.weights,
+        cluster_label: request.cluster_label,
+        k: request.k || 8,
+        algorithm: request.algorithm || "kmeans"
+      };
+      
+      console.log(`📋 Request payload:`, apiRequest);
 
       const response = await fetch(url, {
         method: "POST",
@@ -249,7 +322,7 @@ class RatingApi {
           Accept: "application/json",
           "ngrok-skip-browser-warning": "true",
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(apiRequest),
         signal: controller.signal,
       });
 
@@ -258,15 +331,6 @@ class RatingApi {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`❌ Tiers API Error Response:`, errorText);
-        
-        // Handle specific int64 serialization error
-        if (errorText.includes("Object of type int64 is not JSON serializable")) {
-          throw new Error(
-            `Backend Data Error: Chỉ số "${request.indicator}" chứa dữ liệu int64 không thể serialize. ` +
-            `Backend cần convert int64 sang int hoặc string trước khi trả về JSON. ` +
-            `Liên hệ API developer để fix lỗi này.`
-          );
-        }
         
         throw new Error(
           `HTTP error! status: ${response.status}, body: ${errorText}`,
@@ -300,14 +364,23 @@ class RatingApi {
   async getTiersAll(
     request: TierAllRequest,
     config: RatingConfig,
-  ): Promise<TierAllResponse | TierGroupResponse> {
+  ): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     try {
       const url = `${config.endpoint}/tiers/all`;
       console.log(`🔄 Calling Tiers All API: ${url}`);
-      console.log(`📋 Request payload:`, request);
+      
+      // Format request according to new API spec
+      const apiRequest = {
+        indicators: request.indicators,
+        weights: request.weights,
+        k: request.k || 8,
+        algorithm: request.algorithm || "kmeans"
+      };
+      
+      console.log(`📋 Request payload:`, apiRequest);
 
       const response = await fetch(url, {
         method: "POST",
@@ -317,7 +390,7 @@ class RatingApi {
           Accept: "application/json",
           "ngrok-skip-browser-warning": "true",
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(apiRequest),
         signal: controller.signal,
       });
 
@@ -326,15 +399,6 @@ class RatingApi {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`❌ Tiers All API Error Response:`, errorText);
-        
-        // Handle specific int64 serialization error
-        if (errorText.includes("Object of type int64 is not JSON serializable")) {
-          throw new Error(
-            `Backend Data Error: Chỉ số "${request.indicator}" chứa dữ liệu int64 không thể serialize. ` +
-            `Backend cần convert int64 sang int hoặc string trước khi trả về JSON. ` +
-            `Liên hệ API developer để fix lỗi này.`
-          );
-        }
         
         throw new Error(
           `HTTP error! status: ${response.status}, body: ${errorText}`,
@@ -428,7 +492,7 @@ class RatingApi {
   async getScoring(
     request: ScoringRequest,
     config: RatingConfig,
-  ): Promise<ScoringResponse[]> {
+  ): Promise<ScoringResponse> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -436,8 +500,8 @@ class RatingApi {
       const url = `${config.endpoint}/score`;
       console.log(`🔄 Calling Scoring API: ${url}`);
       
-      // Use companies format directly
-      console.log(`📋 Request payload (companies format):`, request);
+      // Use request directly as it's already an array
+      console.log(`📋 Request payload (array format):`, request);
 
       const response = await fetch(url, {
         method: "POST",
@@ -475,13 +539,16 @@ class RatingApi {
       
       console.log(`✅ Parsed scoring data:`, scoringData);
       
-      // Ensure response is an array
-      if (!Array.isArray(scoringData)) {
-        console.error(`❌ Response is not an array:`, typeof scoringData, scoringData);
-        throw new Error(`Expected array response, got ${typeof scoringData}`);
+      // Validate response structure
+      if (!scoringData || typeof scoringData !== 'object') {
+        throw new Error(`Expected object response, got ${typeof scoringData}`);
       }
 
-      return scoringData as ScoringResponse[];
+      if (!scoringData.companies || !Array.isArray(scoringData.companies)) {
+        throw new Error(`Expected companies array in response, got ${typeof scoringData.companies}`);
+      }
+
+      return scoringData as ScoringResponse;
     } catch (error) {
       clearTimeout(timeoutId);
 
@@ -556,6 +623,12 @@ class RatingApi {
 }
 
 export const ratingApi = new RatingApi();
+
+// Export a simplified getScoring function
+export const getScoring = (request: ScoringRequest, endpoint: string): Promise<ScoringResponse> => {
+  return ratingApi.getScoring(request, { endpoint });
+};
+
 export type {
   RatingConfig,
   TierRequest,
@@ -568,5 +641,11 @@ export type {
   ScoringCompany,
   ScoringRequest,
   ScoringResponse,
+  ScoredCompany,
   Tier,
+  NewTierResponse,
+  TierMetadata,
+  TierLabel,
+  TierLabelInfo,
+  TierCompanyInfo,
 };
