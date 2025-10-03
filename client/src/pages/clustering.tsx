@@ -22,6 +22,7 @@ export default function ClusteringPage() {
     results,
     runClustering,
     stopClustering,
+    isStopping,
     clearError,
   } = useClusteringStore();
   const [activeTab, setActiveTab] = useState("cluster-visualization");
@@ -69,36 +70,40 @@ export default function ClusteringPage() {
 
             {/* Run Clustering */}
             <div className="space-y-4">
-              <div className="flex gap-2">
+              {!isRunning ? (
                 <Button
                   onClick={() => runClustering()}
-                  disabled={isRunning || !canRunClustering}
-                  className="flex-1 bg-accent hover:bg-accent/90 text-white font-medium py-3"
+                  disabled={!canRunClustering}
+                  className="w-full bg-accent hover:bg-accent/90 text-white font-medium py-3"
                   data-testid="button-run-clustering"
                 >
-                  {isRunning ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    "Run Clustering Analysis"
-                  )}
+                  Run Clustering Analysis
                 </Button>
-                
-                {/* Nút Stop chỉ hiển thị khi đang chạy */}
-                {isRunning && (
+              ) : (
+                <div className="space-y-2">
                   <Button
                     onClick={() => stopClustering()}
-                    variant="destructive"
-                    className="px-6 py-3"
+                    disabled={isStopping}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-3"
                     data-testid="button-stop-clustering"
                   >
-                    <Square className="h-4 w-4 mr-2" />
-                    Stop
+                    {isStopping ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Stopping...
+                      </>
+                    ) : (
+                      <>
+                        <Square className="h-4 w-4 mr-2" />
+                        Stop Clustering
+                      </>
+                    )}
                   </Button>
-                )}
-              </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Click to stop the current process and adjust parameters
+                  </p>
+                </div>
+              )}
 
               {/* Progress Indicator */}
               {isRunning && (

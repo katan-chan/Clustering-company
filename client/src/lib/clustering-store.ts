@@ -31,9 +31,9 @@ interface ClusteringState {
   
   // Processing state
   isRunning: boolean;
-  isCancelled: boolean; // Thêm state để theo dõi việc hủy
   progress: number;
   logs: LogEntry[];
+  isStopping: boolean;
   
   // Results
   results: ClusteringResults | null;
@@ -50,7 +50,7 @@ interface ClusteringState {
   setInfoFile: (file: File | null) => void;
   setUploadedData: (data: any[]) => void;
   runClustering: (infoFile?: File) => Promise<void>;
-  stopClustering: () => void; // Thêm action để stop clustering
+  stopClustering: () => void;
   clearResults: () => void;
   clearError: () => void;
   addLog: (entry: Omit<LogEntry, "timestamp">) => void;
@@ -75,9 +75,9 @@ export const useClusteringStore = create<ClusteringState>()(
       infoFile: null,
       uploadedData: [],
       isRunning: false,
-      isCancelled: false, // Khởi tạo trạng thái hủy
       progress: 0,
       logs: [],
+      isStopping: false,
       results: null,
       error: null,
       selectedProjectionType: "pca",
@@ -113,19 +113,29 @@ export const useClusteringStore = create<ClusteringState>()(
           logs: [],
           progress: 0,
           isRunning: false,
-          isCancelled: false, // Reset trạng thái hủy khi clear results
         }),
 
       clearError: () => set({ error: null }),
 
-      // Thêm hàm stop clustering
       stopClustering: () => {
-        set({ 
-          isCancelled: true,
-          isRunning: false,
-          progress: 0
-        });
-        get().addLog({ type: "warning", message: "Clustering process stopped by user" });
+        const state = get();
+        if (state.isRunning) {
+          set({ 
+            isStopping: true 
+          });
+          get().addLog({ type: "warning", message: "Stopping clustering process..." });
+          
+          // Stop the process
+          setTimeout(() => {
+            set({
+              isRunning: false,
+              isStopping: false,
+              progress: 0,
+              error: "Clustering process was stopped by user"
+            });
+            get().addLog({ type: "info", message: "Clustering process stopped. You can now adjust parameters and run again." });
+          }, 500); // Small delay for better UX
+        }
       },
 
       runClustering: async (infoFile?: File) => {
@@ -138,7 +148,7 @@ export const useClusteringStore = create<ClusteringState>()(
         try {
           set({ 
             isRunning: true, 
-            isCancelled: false, // Reset trạng thái hủy khi bắt đầu
+            isStopping: false,
             progress: 0, 
             logs: [],
             results: null,
@@ -147,10 +157,9 @@ export const useClusteringStore = create<ClusteringState>()(
 
           get().addLog({ type: "info", message: "Starting clustering process..." });
 
-          // Kiểm tra hủy trước mỗi bước quan trọng
-          if (get().isCancelled) {
-            get().addLog({ type: "warning", message: "Process cancelled before parameter validation" });
-            return;
+          // Check if stopped
+          if (get().isStopping) {
+            throw new Error("Clustering process was stopped");
           }
 
           // Step 1: Validate parameters and prepare data (20%)
@@ -167,6 +176,11 @@ export const useClusteringStore = create<ClusteringState>()(
             throw new Error("All k values must be >= 2");
           }
 
+          // Check if stopped
+          if (get().isStopping) {
+            throw new Error("Clustering process was stopped");
+          }
+
           // Convert info file to base64 if provided
           let infoFileBase64: string | undefined;
           
@@ -177,13 +191,6 @@ export const useClusteringStore = create<ClusteringState>()(
             get().addLog({ type: "info", message: "Processing info CSV file..." });
             console.log("📄 Info file found:", fileToUse.name, "size:", fileToUse.size);
             console.log("📍 File source:", infoFile ? "parameter" : "store");
-            
-            // Kiểm tra hủy trước khi xử lý file
-            if (get().isCancelled) {
-              get().addLog({ type: "warning", message: "Process cancelled during file processing" });
-              return;
-            }
-            
             try {
               const fileContent = await fileToUse.text();
               infoFileBase64 = btoa(fileContent);
@@ -200,29 +207,27 @@ export const useClusteringStore = create<ClusteringState>()(
             console.log("📄 infoFile parameter:", (infoFile as File | undefined)?.name || "none");
           }
 
-          // Kiểm tra hủy trước khi gọi API
-          if (get().isCancelled) {
-            get().addLog({ type: "warning", message: "Process cancelled before API call" });
-            return;
-          }
-
           // Step 2: Call clustering API (50%)
           set({ progress: 50 });
           get().addLog({ type: "info", message: "Calling clustering API..." });
           
+          // Check if stopped before API call
+          if (get().isStopping) {
+            throw new Error("Clustering process was stopped");
+          }
+          
           const clusterResult = await clusteringApi.runClustering(apiConfig, parameters, infoFileBase64);
+          
+          // Check if stopped after API call
+          if (get().isStopping) {
+            throw new Error("Clustering process was stopped");
+          }
           
           console.log("🔍 Store: Received cluster result from API:");
           console.log("📋 ClusterResult object:", JSON.stringify(clusterResult, null, 2));
           
           set({ progress: 70 });
           get().addLog({ type: "success", message: "Clustering API completed successfully" });
-
-          // Kiểm tra hủy trước khi xử lý kết quả
-          if (get().isCancelled) {
-            get().addLog({ type: "warning", message: "Process cancelled during result processing" });
-            return;
-          }
 
           // Step 3: Process results (30%)
           set({ progress: 80 });
@@ -420,14 +425,26 @@ export const useClusteringStore = create<ClusteringState>()(
 
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-          get().addLog({ type: "error", message: errorMessage });
-          set({
-            error: errorMessage,
-            isRunning: false,
-            isCancelled: false, // Reset trạng thái hủy khi có lỗi
-            progress: 0,
-          });
-          throw error;
+          
+          // Handle stopped case differently
+          if (errorMessage.includes("stopped")) {
+            get().addLog({ type: "warning", message: errorMessage });
+            set({
+              error: null, // Don't show stopped as error
+              isRunning: false,
+              isStopping: false,
+              progress: 0,
+            });
+          } else {
+            get().addLog({ type: "error", message: errorMessage });
+            set({
+              error: errorMessage,
+              isRunning: false,
+              isStopping: false,
+              progress: 0,
+            });
+            throw error;
+          }
         }
       },
     }),
