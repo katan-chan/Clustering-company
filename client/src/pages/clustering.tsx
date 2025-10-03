@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, AlertCircle, Loader2, TestTube } from "lucide-react";
+import { CheckCircle, AlertCircle, Loader2, TestTube, Square } from "lucide-react";
 import { Link } from "wouter";
 
 export default function ClusteringPage() {
@@ -21,6 +21,7 @@ export default function ClusteringPage() {
     error,
     results,
     runClustering,
+    stopClustering,
     clearError,
   } = useClusteringStore();
   const [activeTab, setActiveTab] = useState("cluster-visualization");
@@ -68,21 +69,36 @@ export default function ClusteringPage() {
 
             {/* Run Clustering */}
             <div className="space-y-4">
-              <Button
-                onClick={() => runClustering()}
-                disabled={!canRunClustering}
-                className="w-full bg-accent hover:bg-accent/90 text-white font-medium py-3"
-                data-testid="button-run-clustering"
-              >
-                {isRunning ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Run Clustering Analysis"
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => runClustering()}
+                  disabled={isRunning || !canRunClustering}
+                  className="flex-1 bg-accent hover:bg-accent/90 text-white font-medium py-3"
+                  data-testid="button-run-clustering"
+                >
+                  {isRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    "Run Clustering Analysis"
+                  )}
+                </Button>
+                
+                {/* Nút Stop chỉ hiển thị khi đang chạy */}
+                {isRunning && (
+                  <Button
+                    onClick={() => stopClustering()}
+                    variant="destructive"
+                    className="px-6 py-3"
+                    data-testid="button-stop-clustering"
+                  >
+                    <Square className="h-4 w-4 mr-2" />
+                    Stop
+                  </Button>
                 )}
-              </Button>
+              </div>
 
               {/* Progress Indicator */}
               {isRunning && (

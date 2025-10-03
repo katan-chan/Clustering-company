@@ -31,6 +31,7 @@ interface ClusteringState {
   
   // Processing state
   isRunning: boolean;
+  isCancelled: boolean; // Thêm state để theo dõi việc hủy
   progress: number;
   logs: LogEntry[];
   
@@ -49,6 +50,7 @@ interface ClusteringState {
   setInfoFile: (file: File | null) => void;
   setUploadedData: (data: any[]) => void;
   runClustering: (infoFile?: File) => Promise<void>;
+  stopClustering: () => void; // Thêm action để stop clustering
   clearResults: () => void;
   clearError: () => void;
   addLog: (entry: Omit<LogEntry, "timestamp">) => void;
@@ -73,6 +75,7 @@ export const useClusteringStore = create<ClusteringState>()(
       infoFile: null,
       uploadedData: [],
       isRunning: false,
+      isCancelled: false, // Khởi tạo trạng thái hủy
       progress: 0,
       logs: [],
       results: null,
@@ -110,9 +113,20 @@ export const useClusteringStore = create<ClusteringState>()(
           logs: [],
           progress: 0,
           isRunning: false,
+          isCancelled: false, // Reset trạng thái hủy khi clear results
         }),
 
       clearError: () => set({ error: null }),
+
+      // Thêm hàm stop clustering
+      stopClustering: () => {
+        set({ 
+          isCancelled: true,
+          isRunning: false,
+          progress: 0
+        });
+        get().addLog({ type: "warning", message: "Clustering process stopped by user" });
+      },
 
       runClustering: async (infoFile?: File) => {
         const { parameters, apiConfig } = get();
@@ -124,6 +138,7 @@ export const useClusteringStore = create<ClusteringState>()(
         try {
           set({ 
             isRunning: true, 
+            isCancelled: false, // Reset trạng thái hủy khi bắt đầu
             progress: 0, 
             logs: [],
             results: null,
@@ -131,6 +146,12 @@ export const useClusteringStore = create<ClusteringState>()(
           });
 
           get().addLog({ type: "info", message: "Starting clustering process..." });
+
+          // Kiểm tra hủy trước mỗi bước quan trọng
+          if (get().isCancelled) {
+            get().addLog({ type: "warning", message: "Process cancelled before parameter validation" });
+            return;
+          }
 
           // Step 1: Validate parameters and prepare data (20%)
           set({ progress: 20 });
@@ -156,6 +177,13 @@ export const useClusteringStore = create<ClusteringState>()(
             get().addLog({ type: "info", message: "Processing info CSV file..." });
             console.log("📄 Info file found:", fileToUse.name, "size:", fileToUse.size);
             console.log("📍 File source:", infoFile ? "parameter" : "store");
+            
+            // Kiểm tra hủy trước khi xử lý file
+            if (get().isCancelled) {
+              get().addLog({ type: "warning", message: "Process cancelled during file processing" });
+              return;
+            }
+            
             try {
               const fileContent = await fileToUse.text();
               infoFileBase64 = btoa(fileContent);
@@ -172,6 +200,12 @@ export const useClusteringStore = create<ClusteringState>()(
             console.log("📄 infoFile parameter:", (infoFile as File | undefined)?.name || "none");
           }
 
+          // Kiểm tra hủy trước khi gọi API
+          if (get().isCancelled) {
+            get().addLog({ type: "warning", message: "Process cancelled before API call" });
+            return;
+          }
+
           // Step 2: Call clustering API (50%)
           set({ progress: 50 });
           get().addLog({ type: "info", message: "Calling clustering API..." });
@@ -183,6 +217,12 @@ export const useClusteringStore = create<ClusteringState>()(
           
           set({ progress: 70 });
           get().addLog({ type: "success", message: "Clustering API completed successfully" });
+
+          // Kiểm tra hủy trước khi xử lý kết quả
+          if (get().isCancelled) {
+            get().addLog({ type: "warning", message: "Process cancelled during result processing" });
+            return;
+          }
 
           // Step 3: Process results (30%)
           set({ progress: 80 });
@@ -384,6 +424,7 @@ export const useClusteringStore = create<ClusteringState>()(
           set({
             error: errorMessage,
             isRunning: false,
+            isCancelled: false, // Reset trạng thái hủy khi có lỗi
             progress: 0,
           });
           throw error;

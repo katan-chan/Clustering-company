@@ -733,7 +733,7 @@ const layout: any = {
         {/* <div ref={plotRef} className="w-full h-[820px]" data-testid="scatter-plot" /> */}
         <div
           ref={plotRef}
-          className="w-full h-[calc(100vh-280px)]" // dieu chinh kich thuoc khung bieu do
+          className="w-full h-[calc(100vh-180px)] min-h-[700px]" // tăng kích thước khung biểu đồ cho dễ quan sát
           data-testid="scatter-plot"
         />
 
