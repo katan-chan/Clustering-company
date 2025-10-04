@@ -81,6 +81,7 @@ export default function CompanyRating() {
   
   // State for data - updated to handle both single and group responses
   const [tierDataList, setTierDataList] = useState<(TierResponse | TierAllResponse)[]>([]);
+  const [rawApiResponses, setRawApiResponses] = useState<{ [key: string]: any }>({});
   const [companyDetails, setCompanyDetails] = useState<CompanyDetail[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -375,6 +376,7 @@ export default function CompanyRating() {
         // Individual mode: load each indicator separately
         console.log("📊 Individual mode: loading each indicator separately");
         const tierResponses: TierResponse[] = [];
+        const rawResponses: { [key: string]: any } = {};
         
         for (const indicator of selectedIndicators) {
           console.log(`🔄 Loading tier data for indicator: ${indicator}`);
@@ -391,6 +393,9 @@ export default function CompanyRating() {
             }, ratingConfig);
             
             console.log(`✅ Tier All data received for ${indicator}:`, response);
+            
+            // Store raw response for CSV export
+            rawResponses[indicator] = response;
             
             // Parse new API response format using helper function
             const tiers = parseTierResponse(response, clusteringConfig.algorithm);
@@ -418,6 +423,9 @@ export default function CompanyRating() {
             
             console.log(`✅ Tier cluster data received for ${indicator}:`, response);
             
+            // Store raw response for CSV export
+            rawResponses[indicator] = response;
+            
             // Parse new API response format using helper function
             const tiers = parseTierResponse(response, clusteringConfig.algorithm);
             
@@ -436,11 +444,13 @@ export default function CompanyRating() {
         }
         
         setTierDataList(tierResponses);
+        setRawApiResponses(rawResponses);
         
       } else {
         // Group mode: combine indicators within each group
         console.log("👥 Group mode: loading indicator groups");
         const tierResponses: TierResponse[] = [];
+        const rawResponses: { [key: string]: any } = {};
         
         for (let groupIndex = 0; groupIndex < indicatorGroups.length; groupIndex++) {
           const group = indicatorGroups[groupIndex];
@@ -454,6 +464,8 @@ export default function CompanyRating() {
             groupWeightArray[indicatorIndex] || 1.0
           );
           
+          const groupKey = group.join(" + ");
+          
           if (selectedSector === "All") {
             // Use /tiers/all API for All Sectors
             const response = await ratingApi.getTiersAll({
@@ -465,11 +477,14 @@ export default function CompanyRating() {
             
             console.log(`✅ Tier All data received for group ${groupIndex + 1}:`, response);
             
+            // Store raw response for CSV export
+            rawResponses[groupKey] = response;
+            
             // Parse new API response format using helper function
             const tiers = parseTierResponse(response, clusteringConfig.algorithm);
             
             const normalizedResponse: TierResponse = {
-              indicator: group.join(" + "),
+              indicator: groupKey,
               method: { 
                 label: response.metadata?.algorithm || clusteringConfig.algorithm, 
                 mode: response.metadata?.mode || "high_good" 
@@ -491,12 +506,15 @@ export default function CompanyRating() {
             
             console.log(`✅ Tier cluster data received for group ${groupIndex + 1}:`, response);
             
+            // Store raw response for CSV export
+            rawResponses[groupKey] = response;
+            
             // Parse new API response format using helper function
             const tiers = parseTierResponse(response, clusteringConfig.algorithm);
             
             const normalizedResponse: TierResponse = {
               group_label: selectedGroupLabel,
-              indicator: group.join(" + "),
+              indicator: groupKey,
               method: { 
                 label: response.metadata?.algorithm || clusteringConfig.algorithm, 
                 mode: response.metadata?.mode || "high_good" 
@@ -509,12 +527,14 @@ export default function CompanyRating() {
         }
         
         setTierDataList(tierResponses);
+        setRawApiResponses(rawResponses);
       }
     } catch (error) {
       console.error("❌ Failed to load tier data:", error);
       
       // Clear tier data on error
       setTierDataList([]);
+      setRawApiResponses({});
       
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       
@@ -792,6 +812,84 @@ export default function CompanyRating() {
       description: "Company rating data has been exported successfully",
       variant: "default",
     });
+  };
+
+  /**
+   * Export CSV for individual indicator with detailed company data
+   * @param indicatorName - Name of the indicator to export
+   * @param rawApiResponse - Raw API response containing tier_labels data
+   */
+  const exportIndicatorCSV = async (indicatorName: string, rawApiResponse?: any) => {
+    if (!rawApiResponse || !rawApiResponse.tier_labels) {
+      toast({
+        title: "Export Failed",
+        description: "No detailed company data available for this indicator",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      console.log("📊 Exporting CSV for indicator:", indicatorName);
+      console.log("🔍 Raw API response:", rawApiResponse);
+
+      // CSV header
+      let csvContent = "taxcode,sector_unique_id,yearreport,indicator_label,value\n";
+      
+      // Extract companies from all tiers
+      const allCompanies: any[] = [];
+      
+      rawApiResponse.tier_labels.forEach((tierObj: any) => {
+        Object.entries(tierObj).forEach(([tierName, tierData]: [string, any]) => {
+          if (tierData.tiers_companies && Array.isArray(tierData.tiers_companies)) {
+            tierData.tiers_companies.forEach((company: any) => {
+              allCompanies.push({
+                taxcode: company.taxcode || '',
+                sector_unique_id: company.sector_unique_id || '',
+                yearreport: company.yearreport || '',
+                indicator_label: tierName, // T1, T2, T3, etc.
+                value: company[indicatorName] || 0 // Get the indicator value
+              });
+            });
+          }
+        });
+      });
+
+      console.log("📋 Extracted companies:", allCompanies.length);
+
+      // Generate CSV rows
+      allCompanies.forEach(company => {
+        csvContent += `${company.taxcode},${company.sector_unique_id},${company.yearreport},${company.indicator_label},${company.value}\n`;
+      });
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `${indicatorName}_companies_${selectedSector}_${timestamp}.csv`;
+      link.download = filename;
+      
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast({
+        title: "CSV Exported Successfully",
+        description: `${allCompanies.length} companies exported for ${indicatorName}`,
+        variant: "default",
+      });
+
+    } catch (error) {
+      console.error("❌ Export failed:", error);
+      toast({
+        title: "Export Failed",
+        description: `Failed to export CSV: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: "destructive",
+      });
+    }
   };
   
   return (
@@ -1425,57 +1523,77 @@ export default function CompanyRating() {
                   return (
                     <Card key={`tier-${index}`}>
                       <CardHeader>
-                        <CardTitle className="text-lg">
-                          {(() => {
-                            const description = getIndicatorDescription(tierData.indicator);
-                            const isGroupIndicator = tierData.indicator.includes('+');
-                            
-                            if (isGroupIndicator) {
-                              // For group indicators, use group name instead of indicator list
-                              const components = tierData.indicator.split('+').map(comp => comp.trim());
-                              const groupName = getGroupDisplayName(components);
-                              const displayName = identifyIndicatorGroup(components) ? groupName : `Custom Group: ${groupName}`;
-                              
-                              const sector = 'sector' in tierData ? tierData.sector : "All";
-                              const sectorText = sector === "All" 
-                                ? "TẤT CẢ CÁC DOANH NGHIỆP"
-                                : `CÁC DOANH NGHIỆP: (${sector}) ${(sector && sectorNames[sector]) || `Sector ${sector}`}`;
-                              return `${displayName} - ${sectorText}`;
-                            } else {
-                              // For individual indicators
-                              const displayTitle = description ? `${tierData.indicator}: ${description}` : tierData.indicator;
-                              const sector = 'sector' in tierData ? tierData.sector : "All";
-                              return sector === "All" 
-                                ? `${displayTitle} - TẤT CẢ CÁC DOANH NGHIỆP`
-                                : `${displayTitle} - CÁC DOANH NGHIỆP: (${sector}) ${(sector && sectorNames[sector]) || `Sector ${sector}`}`;
-                            }
-                          })()}
-                        </CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                          {(() => {
-                            const isGroupIndicator = tierData.indicator.includes('+');
-                            
-                            if (isGroupIndicator) {
-                              // For group indicators, show components breakdown
-                              const components = tierData.indicator.split('+');
-                              const componentDescriptions = components.map(comp => {
-                                const desc = getIndicatorDescription(comp.trim());
-                                return desc ? `${comp.trim()}: ${desc}` : comp.trim();
-                              }).join(' • ');
-                              
-                              const sector = 'sector' in tierData ? tierData.sector : "All";
-                              return sector === "All" 
-                                ? `Components: ${componentDescriptions} | Method: ${tierData.method.label} (${tierData.method.mode})`
-                                : `Components: ${componentDescriptions} | Group: ${('group_label' in tierData) ? tierData.group_label : 'N/A'} | Method: ${tierData.method.label} (${tierData.method.mode})`;
-                            } else {
-                              // For individual indicators
-                              const sector = 'sector' in tierData ? tierData.sector : "All";
-                              return sector === "All" 
-                                ? `Method: ${tierData.method.label} (${tierData.method.mode})`
-                                : `Group: ${('group_label' in tierData) ? tierData.group_label : 'N/A'} | Method: ${tierData.method.label} (${tierData.method.mode})`;
-                            }
-                          })()}
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg">
+                              {(() => {
+                                const description = getIndicatorDescription(tierData.indicator);
+                                const isGroupIndicator = tierData.indicator.includes('+');
+                                
+                                if (isGroupIndicator) {
+                                  // For group indicators, use group name instead of indicator list
+                                  const components = tierData.indicator.split('+').map(comp => comp.trim());
+                                  const groupName = getGroupDisplayName(components);
+                                  const displayName = identifyIndicatorGroup(components) ? groupName : `Custom Group: ${groupName}`;
+                                  
+                                  const sector = 'sector' in tierData ? tierData.sector : "All";
+                                  const sectorText = sector === "All" 
+                                    ? "TẤT CẢ CÁC DOANH NGHIỆP"
+                                    : `CÁC DOANH NGHIỆP: (${sector}) ${(sector && sectorNames[sector]) || `Sector ${sector}`}`;
+                                  return `${displayName} - ${sectorText}`;
+                                } else {
+                                  // For individual indicators
+                                  const displayTitle = description ? `${tierData.indicator}: ${description}` : tierData.indicator;
+                                  const sector = 'sector' in tierData ? tierData.sector : "All";
+                                  return sector === "All" 
+                                    ? `${displayTitle} - TẤT CẢ CÁC DOANH NGHIỆP`
+                                    : `${displayTitle} - CÁC DOANH NGHIỆP: (${sector}) ${(sector && sectorNames[sector]) || `Sector ${sector}`}`;
+                                }
+                              })()}
+                            </CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              {(() => {
+                                const isGroupIndicator = tierData.indicator.includes('+');
+                                
+                                if (isGroupIndicator) {
+                                  // For group indicators, show components breakdown
+                                  const components = tierData.indicator.split('+');
+                                  const componentDescriptions = components.map(comp => {
+                                    const desc = getIndicatorDescription(comp.trim());
+                                    return desc ? `${comp.trim()}: ${desc}` : comp.trim();
+                                  }).join(' • ');
+                                  
+                                  const sector = 'sector' in tierData ? tierData.sector : "All";
+                                  return sector === "All" 
+                                    ? `Components: ${componentDescriptions} | Method: ${tierData.method.label} (${tierData.method.mode})`
+                                    : `Components: ${componentDescriptions} | Group: ${('group_label' in tierData) ? tierData.group_label : 'N/A'} | Method: ${tierData.method.label} (${tierData.method.mode})`;
+                                } else {
+                                  // For individual indicators
+                                  const sector = 'sector' in tierData ? tierData.sector : "All";
+                                  return sector === "All" 
+                                    ? `Method: ${tierData.method.label} (${tierData.method.mode})`
+                                    : `Group: ${('group_label' in tierData) ? tierData.group_label : 'N/A'} | Method: ${tierData.method.label} (${tierData.method.mode})`;
+                                }
+                              })()}
+                            </p>
+                          </div>
+                          
+                          {/* Export CSV Button for individual indicator */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const rawResponse = rawApiResponses[tierData.indicator];
+                              exportIndicatorCSV(tierData.indicator, rawResponse);
+                            }}
+                            className="flex items-center gap-2 ml-4"
+                            disabled={!rawApiResponses[tierData.indicator]}
+                            title={`Export detailed company data for ${tierData.indicator}`}
+                          >
+                            <Download className="h-4 w-4" />
+                            Export CSV
+                          </Button>
+                        </div>
                       </CardHeader>
                       <CardContent>
                     <Table>
