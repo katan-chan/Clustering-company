@@ -155,16 +155,60 @@ export default function CompanyRating() {
   }, [selectedCompanies, selectedIndicators, ratingConfig.endpoint]);
   
   const onApiConfigSubmit = async (data: { endpoint: string }) => {
-    setRatingConfig({ endpoint: data.endpoint });
-    
     if (data.endpoint) {
       setConnectionStatus("checking");
+      // Update config first, then test connection with the new config
+      const newConfig = { endpoint: data.endpoint };
+      setRatingConfig(newConfig);
+      
       try {
-        console.log("🔄 Connecting to API and loading indicators:", data.endpoint);
-        // Chỉ cần gọi loadIndicators - nếu thành công thì API đã kết nối
-        await loadIndicators();
+        console.log("🔄 Testing connection to:", data.endpoint);
+        // Use the new config directly instead of relying on state
+        const indicatorResponse = await ratingApi.getIndicators(newConfig);
         
-        // Chỉ set connected khi loadIndicators thành công
+        console.log("� Raw indicators response:", indicatorResponse);
+        
+        // Handle both old format (array) and new format (object with descriptions)
+        if (typeof indicatorResponse === 'object' && indicatorResponse && 'indicators' in indicatorResponse) {
+          // New format: { indicators: string[], descriptions?: {...} }
+          const responseObj = indicatorResponse as { indicators: string[], descriptions?: { [key: string]: string } };
+          const indicatorList = responseObj.indicators || [];
+          const descriptions = responseObj.descriptions || {};
+          
+          setIndicators(indicatorList);
+          setIndicatorDescriptions(descriptions);
+          console.log("📊 Loaded indicators with descriptions:", indicatorList.length, "indicators");
+          
+          if (indicatorList.length === 0) {
+            console.warn("⚠️ API returned empty indicators list");
+            toast({
+              title: "No Indicators Available", 
+              description: "The API returned an empty list of indicators. Contact the API provider.",
+              variant: "destructive",
+            });
+          }
+        } else if (Array.isArray(indicatorResponse)) {
+          setIndicators(indicatorResponse);
+          setIndicatorDescriptions({});
+          console.log("📊 Loaded indicators (array format):", indicatorResponse.length, "indicators");
+          
+          if (indicatorResponse.length === 0) {
+            console.warn("⚠️ API returned empty indicators list");
+            toast({
+              title: "No Indicators Available", 
+              description: "The API returned an empty list of indicators. Contact the API provider.",
+              variant: "destructive",
+            });
+          }
+        } else {
+          console.error("❌ Invalid indicators format:", indicatorResponse);
+          throw new Error("Invalid indicators format received from API");
+        }
+        
+        if (indicators.length === 0) {
+          console.warn("⚠️ No indicators returned from API");
+        }
+        
         setConnectionStatus("connected");
         
         toast({
@@ -174,129 +218,68 @@ export default function CompanyRating() {
         });
       } catch (error) {
         console.error("❌ Connection/Loading failed:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown connection error";
+        setConnectionStatus("disconnected");
+        setIndicators([]);
+        setIndicatorDescriptions({});
+        setSelectedIndicators([]);
+        
+        const errorMessage = error instanceof Error ? error.message : "Unknown error loading indicators";
+        
+        // Detailed error analysis
+        let userFriendlyMessage = "Unknown error occurred";
+        let possibleCauses = ["Check browser console for details"];
+        
+        if (errorMessage.includes("404") || errorMessage.includes("Not Found")) {
+          userFriendlyMessage = "API endpoint not found";
+          possibleCauses = [
+            "Check if the URL is correct",
+            "Verify the server is running",
+            "Check the /indicator endpoint exists"
+          ];
+        } else if (errorMessage.includes("CORS")) {
+          userFriendlyMessage = "Cross-origin request blocked";
+          possibleCauses = [
+            "Server needs to allow CORS for this domain",
+            "Check Access-Control-Allow-Origin headers",
+            "Try using a CORS proxy for development"
+          ];
+        } else if (errorMessage.includes("NetworkError") || errorMessage.includes("fetch")) {
+          userFriendlyMessage = "Network connection failed";
+          possibleCauses = [
+            "Check your internet connection",
+            "Verify the server is accessible",
+            "Check if the URL is reachable",
+            "Try ping/curl to test connectivity"
+          ];
+        } else if (errorMessage.includes("Invalid indicators format")) {
+          userFriendlyMessage = "Server returned invalid data format";
+          possibleCauses = [
+            "Check API response format",
+            "Verify endpoint returns correct data structure",
+            "Check server logs for errors"
+          ];
+        } else if (errorMessage.includes("Timeout")) {
+          userFriendlyMessage = "Request timed out";
+          possibleCauses = [
+            "Server may be slow or overloaded",
+            "Check server performance",
+            "Try increasing timeout settings"
+          ];
+        }
+        
         toast({
           title: "Connection Failed",
-          description: `${errorMessage}\n\nCheck: 1) URL format 2) API availability 3) CORS settings 4) Network connection`,
+          description: `${userFriendlyMessage}\n\nPossible causes:\n${possibleCauses.join('\n')}`,
           variant: "destructive",
         });
-        setConnectionStatus("disconnected");
-        setIndicators([]); // Clear indicators on failure
       }
     } else {
       setConnectionStatus("disconnected");
       setIndicators([]);
+      setIndicatorDescriptions({});
     }
   };
 
-  const loadIndicators = async () => {
-    try {
-      console.log("📡 Fetching indicators from API...");
-      console.log("🔗 API Endpoint:", ratingConfig.endpoint);
-      
-      const indicatorResponse = await ratingApi.getIndicators(ratingConfig);
-      
-      console.log("📊 Raw indicators response:", indicatorResponse);
-      console.log("📊 Response type:", typeof indicatorResponse);
-      
-      // Handle both old format (array) and new format (object with descriptions)
-      if (typeof indicatorResponse === 'object' && indicatorResponse && 'indicators' in indicatorResponse) {
-        // New format: { indicators: { "STD_RTD146": "FFO / Nợ vay", ... } }
-        const descriptions = indicatorResponse.indicators as { [key: string]: string };
-        const indicatorList = Object.keys(descriptions);
-        
-        setIndicators(indicatorList);
-        setIndicatorDescriptions(descriptions);
-        
-        if (indicatorList.length > 0) {
-          setSelectedIndicators([indicatorList[0]]);
-          console.log(`✅ Loaded ${indicatorList.length} indicators with descriptions, selected: ${indicatorList[0]}`);
-        }
-      } else if (Array.isArray(indicatorResponse)) {
-        // Old format: ["STD_RTD146", "STD_RTD71", ...]
-        setIndicators(indicatorResponse);
-        setIndicatorDescriptions({}); // No descriptions available
-        
-        if (indicatorResponse.length > 0) {
-          setSelectedIndicators([indicatorResponse[0]]);
-          console.log(`✅ Loaded ${indicatorResponse.length} indicators (old format), selected: ${indicatorResponse[0]}`);
-        }
-      } else {
-        console.error("❌ Invalid indicators format:", {
-          type: typeof indicatorResponse,
-          isArray: Array.isArray(indicatorResponse),
-          value: indicatorResponse
-        });
-        throw new Error(`Invalid indicators format: expected array or object with 'indicators' key, got ${typeof indicatorResponse}. Response: ${JSON.stringify(indicatorResponse)}`);
-      }
-      
-      if (indicators.length === 0) {
-        console.warn("⚠️ API returned empty indicators list");
-        toast({
-          title: "No Indicators Available", 
-          description: "The API returned an empty list of indicators. Contact the API provider.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error("❌ Failed to load indicators:", error);
-      setIndicators([]);
-      setIndicatorDescriptions({});
-      setSelectedIndicators([]);
-      
-      const errorMessage = error instanceof Error ? error.message : "Unknown error loading indicators";
-      
-      // Detailed error analysis
-      let userFriendlyMessage = "Unknown error occurred";
-      let possibleCauses = ["Check browser console for details"];
-      
-      if (errorMessage.includes("404") || errorMessage.includes("Not Found")) {
-        userFriendlyMessage = "API endpoint /indicator not found";
-        possibleCauses = [
-          "• API endpoint /indicator not implemented", 
-          "• Wrong base URL (check your API documentation)",
-          "• API server not running"
-        ];
-      } else if (errorMessage.includes("CORS")) {
-        userFriendlyMessage = "CORS policy blocking the request";
-        possibleCauses = [
-          "• API server needs to allow CORS from your domain",
-          "• Use a CORS proxy or configure server properly"
-        ];
-      } else if (errorMessage.includes("NetworkError") || errorMessage.includes("fetch")) {
-        userFriendlyMessage = "Network connection failed";
-        possibleCauses = [
-          "• Check your internet connection",
-          "• API server might be down",
-          "• Wrong URL format"
-        ];
-      } else if (errorMessage.includes("Invalid indicators format")) {
-        userFriendlyMessage = "API returned unexpected data format";
-        possibleCauses = [
-          "• API should return array of strings or object with 'indicators' key",
-          "• Current response format not supported",
-          "• Contact API provider for correct format"
-        ];
-      } else if (errorMessage.includes("Timeout")) {
-        userFriendlyMessage = "API request timed out";
-        possibleCauses = [
-          "• API server responding too slowly",
-          "• Network latency issues",
-          "• Try again in a few moments"
-        ];
-      }
-      
-      toast({
-        title: "Connection Failed",
-        description: `${userFriendlyMessage}\n\nPossible causes:\n${possibleCauses.join('\n')}`,
-        variant: "destructive",
-      });
-      
-      // Rethrow to let onApiConfigSubmit handle it
-      throw error;
-    }
-  };
-  
   /**
    * Parse tier data from new API response format
    * @param response - Response from the new API format

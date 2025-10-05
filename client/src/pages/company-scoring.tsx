@@ -73,16 +73,35 @@ export default function CompanyScoring() {
   const [renderError, setRenderError] = useState<string>("");
   
   const onApiConfigSubmit = async (data: { endpoint: string }) => {
-    setRatingConfig({ endpoint: data.endpoint });
-    
     if (data.endpoint) {
       setConnectionStatus("checking");
+      // Update config first, then test connection with the new config
+      const newConfig = { endpoint: data.endpoint };
+      setRatingConfig(newConfig);
+      
       try {
-        console.log("🔄 Connecting to API and loading indicators:", data.endpoint);
-        // Chỉ cần gọi loadIndicators - nếu thành công thì API đã kết nối
-        await loadIndicators();
+        console.log("🔄 Testing connection to:", data.endpoint);
+        // Use the new config directly instead of relying on state
+        const indicatorResponse = await ratingApi.getIndicators(newConfig);
         
-        // Chỉ set connected khi loadIndicators thành công
+        console.log("� Raw indicators response:", indicatorResponse);
+        
+        // Handle both old format (array) and new format (object with descriptions)
+        if (typeof indicatorResponse === 'object' && indicatorResponse && 'indicators' in indicatorResponse) {
+          // New format: { indicators: string[], descriptions?: {...} }
+          const responseObj = indicatorResponse as { indicators: string[], descriptions?: { [key: string]: string } };
+          const indicatorList = responseObj.indicators || [];
+          
+          setIndicators(indicatorList);
+          console.log("📊 Loaded indicators with descriptions:", indicatorList.length, "indicators");
+        } else if (Array.isArray(indicatorResponse)) {
+          setIndicators(indicatorResponse);
+          console.log("📊 Loaded indicators (array format):", indicatorResponse.length, "indicators");
+        } else {
+          console.error("❌ Invalid indicators format:", indicatorResponse);
+          throw new Error("Invalid indicators format received from API");
+        }
+        
         setConnectionStatus("connected");
         
         toast({
@@ -92,38 +111,20 @@ export default function CompanyScoring() {
         });
       } catch (error) {
         console.error("❌ Connection/Loading failed:", error);
+        setConnectionStatus("disconnected");
+        setIndicators([]);
+        
         const errorMessage = error instanceof Error ? error.message : "Unknown connection error";
+        
         toast({
           title: "Connection Failed",
           description: `${errorMessage}\n\nCheck: 1) URL format 2) API availability 3) CORS settings 4) Network connection`,
           variant: "destructive",
         });
-        setConnectionStatus("disconnected");
-        setIndicators([]); // Clear indicators on failure
       }
     } else {
       setConnectionStatus("disconnected");
       setIndicators([]);
-    }
-  };
-  
-  const loadIndicators = async () => {
-    try {
-      console.log("📡 Fetching indicators from API...");
-      const indicatorList = await ratingApi.getIndicators(ratingConfig);
-      
-      if (!Array.isArray(indicatorList)) {
-        throw new Error(`Invalid indicators format: expected array, got ${typeof indicatorList}`);
-      }
-      
-      setIndicators(indicatorList);
-      if (indicatorList.length > 0) {
-        console.log(`✅ Loaded ${indicatorList.length} indicators`);
-      }
-    } catch (error) {
-      console.error("❌ Failed to load indicators:", error);
-      setIndicators([]);
-      throw error;
     }
   };
   
@@ -736,13 +737,13 @@ export default function CompanyScoring() {
         };
       }
       
-      if (company.taxcode && company.indicators.length > 0) {
+      if (company.taxcode && company.indicators && company.indicators.length > 0) {
         companies.push(company);
         console.log(`✅ Parsed company ${company.taxcode} with indicators: ${company.indicators.join(', ')}`);
       } else {
         console.warn(`⚠️ Skipping invalid company data at row ${i}:`, {
           taxcode: company.taxcode,
-          indicators: company.indicators.length,
+          indicators: company.indicators?.length || 0,
           sector: company.sector
         });
       }
